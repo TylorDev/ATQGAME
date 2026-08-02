@@ -1,0 +1,88 @@
+// Typography
+$font-family-display: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+$font-family-primary: "Aptos", "Segoe UI", sans-serif;
+$font-family-utility: "Cascadia Mono", "Consolas", monospace;
+
+$font-size-xs: 0.6875rem;
+$font-size-sm: 0.8125rem;
+$font-size-md: 1rem;
+$font-size-lg: 1.25rem;
+$font-size-xl: 1.625rem;
+$font-size-2xl: 2.25rem;
+
+$font-weight-regular: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+$line-height-sm: 1.15;
+$line-height-md: 1.5;
+$line-height-lg: 1.7;
+
+// Colors
+$color-primary: #d7a96b;
+$color-primary-hover: #e4bd86;
+$color-secondary: #63c2b4;
+$color-background: #101722;
+$color-surface: #192230;
+$color-surface-raised: #222f3f;
+$color-ground: #263342;
+$color-grid: #4f6371;
+$color-obstacle: #755f52;
+$color-obstacle-edge: #d3a56c;
+$color-player: #d9d4c7;
+$color-text-primary: #f1eee7;
+$color-text-secondary: #aeb9c2;
+$color-text-disabled: #687582;
+$color-success: #63c2b4;
+$color-warning: #e2ae62;
+$color-error: #e47b71;
+$color-info: #77aee8;
+$color-overlay: rgb(9 14 21 / 78%);
+
+// Spacing
+$spacing-1: 0.25rem;
+$spacing-2: 0.5rem;
+$spacing-3: 0.75rem;
+$spacing-4: 1rem;
+$spacing-5: 1.5rem;
+$spacing-6: 2rem;
+$spacing-7: 3rem;
+$spacing-8: 4rem;
+
+// Borders
+$border-width-default: 1px;
+$border-color-default: rgb(215 169 107 / 28%);
+$border-radius-sm: 0.25rem;
+$border-radius-md: 0.625rem;
+$border-radius-lg: 1rem;
+$border-radius-full: 9999px;
+
+// Shadows
+$shadow-sm: 0 1px 2px rgb(0 0 0 / 20%);
+$shadow-md: 0 10px 28px rgb(0 0 0 / 28%);
+$shadow-lg: 0 22px 52px rgb(0 0 0 / 38%);
+
+// Layout
+$content-width-sm: 640px;
+$content-width-md: 960px;
+$content-width-lg: 1280px;
+$hud-width: 18rem;
+
+// Breakpoints
+$breakpoint-mobile: 480px;
+$breakpoint-tablet: 768px;
+$breakpoint-desktop: 1024px;
+$breakpoint-wide: 1440px;
+
+// Layers
+$z-index-dropdown: 100;
+$z-index-sticky: 200;
+$z-index-overlay: 300;
+$z-index-modal: 400;
+$z-index-toast: 500;
+
+// Motion
+$transition-fast: 150ms ease;
+$transition-default: 250ms ease;
+$transition-slow: 400ms ease;

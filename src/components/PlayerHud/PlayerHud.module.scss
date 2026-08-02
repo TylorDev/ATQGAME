@@ -1,0 +1,291 @@
+.hud {
+  position: absolute;
+  top: $spacing-5;
+  left: $spacing-5;
+  z-index: $z-index-overlay;
+  display: grid;
+  width: min(22rem, calc(100vw - #{$spacing-6}));
+  gap: $spacing-3;
+  padding: $spacing-4 $spacing-5 $spacing-5;
+  pointer-events: none;
+  background: $color-overlay;
+  border: $border-width-default solid $border-color-default;
+  border-radius: $border-radius-md;
+  box-shadow: $shadow-md;
+  backdrop-filter: blur(12px);
+}
+
+.eyebrow,
+.effectsHeader,
+.healthHeader,
+.targetHeader,
+.targetStats,
+.targetStatus,
+.input,
+.effectName,
+.effectDescription,
+.empty,
+.deathNotice {
+  font-family: $font-family-utility;
+}
+
+.eyebrow {
+  color: $color-primary;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-family: $font-family-display;
+  font-size: $font-size-xl;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.04em;
+  line-height: $line-height-sm;
+  text-transform: uppercase;
+}
+
+.healthHeader,
+.effectsHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+}
+
+.healthHeader output {
+  color: $color-text-primary;
+  font-variant-numeric: tabular-nums;
+}
+
+.healthTrack {
+  width: 100%;
+  height: 0.55rem;
+  overflow: hidden;
+  background: $color-surface-raised;
+  border: $border-width-default solid rgb(228 123 113 / 30%);
+  border-radius: $border-radius-full;
+}
+
+.healthFill {
+  height: 100%;
+  background: linear-gradient(90deg, $color-error, $color-warning);
+  border-radius: inherit;
+  transition: width $transition-default;
+}
+
+.rule {
+  width: 100%;
+  height: $border-width-default;
+  background: $border-color-default;
+}
+
+.effects {
+  display: grid;
+  gap: $spacing-2;
+}
+
+.target {
+  display: grid;
+  gap: $spacing-2;
+}
+
+.targetHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: $color-error;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.targetHeader span:last-child {
+  color: $color-text-primary;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+}
+
+.targetHealthTrack {
+  width: 100%;
+  height: 0.42rem;
+  overflow: hidden;
+  background: $color-surface-raised;
+  border: $border-width-default solid rgb(228 123 113 / 30%);
+  border-radius: $border-radius-full;
+}
+
+.targetHealthFill {
+  height: 100%;
+  background: linear-gradient(90deg, $color-error, $color-warning);
+  border-radius: inherit;
+  transition: width $transition-default;
+}
+
+.targetStatus {
+  margin: 0;
+  color: $color-warning;
+  font-size: $font-size-xs;
+}
+
+.targetStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-2;
+  margin: 0;
+}
+
+.targetStats div {
+  display: grid;
+  gap: $spacing-1;
+  padding: $spacing-2;
+  background: rgb(228 123 113 / 8%);
+  border: $border-width-default solid rgb(228 123 113 / 16%);
+}
+
+.targetStats dt {
+  color: $color-text-secondary;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.targetStats dd {
+  margin: 0;
+  color: $color-text-primary;
+  font-size: $font-size-sm;
+  font-variant-numeric: tabular-nums;
+}
+
+.effectsHeader {
+  color: $color-secondary;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.effectList {
+  display: grid;
+  gap: $spacing-2;
+}
+
+.effect {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: $spacing-2;
+  align-items: start;
+  padding: $spacing-2;
+  background: rgb(255 255 255 / 3%);
+  border-left: 2px solid $color-secondary;
+}
+
+.buff,
+.debuff {
+  padding: 0.1rem $spacing-1;
+  color: $color-background;
+  font-family: $font-family-utility;
+  font-size: 0.6rem;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.buff {
+  background: $color-secondary;
+}
+
+.debuff {
+  background: $color-error;
+}
+
+.effectCopy {
+  display: grid;
+  gap: $spacing-1;
+}
+
+.effectName,
+.effectDescription,
+.empty,
+.instruction {
+  margin: 0;
+}
+
+.effectName {
+  color: $color-text-primary;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+}
+
+.effectDescription,
+.empty {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  line-height: $line-height-md;
+}
+
+.instruction {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: $spacing-3;
+  align-items: center;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  line-height: $line-height-md;
+}
+
+.input {
+  display: inline-grid;
+  min-width: 2.65rem;
+  min-height: 2rem;
+  padding: $spacing-1 $spacing-2;
+  place-items: center;
+  color: $color-background;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  background: $color-primary;
+  border-radius: $border-radius-sm;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 20%);
+}
+
+.deathNotice {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  z-index: $z-index-toast;
+  padding: $spacing-3 $spacing-5;
+  color: $color-text-primary;
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.08em;
+  background: rgb(114 25 27 / 90%);
+  border: $border-width-default solid $color-error;
+  border-radius: $border-radius-sm;
+  box-shadow: $shadow-lg;
+  transform: translateX(-50%);
+  text-transform: uppercase;
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .hud {
+    top: $spacing-3;
+    left: $spacing-3;
+    padding: $spacing-3 $spacing-4 $spacing-4;
+  }
+
+  .deathNotice {
+    top: auto;
+    bottom: $spacing-7;
+    width: calc(100vw - #{$spacing-6});
+    text-align: center;
+  }
+}
+
+@media (max-width: $breakpoint-tablet) and (min-width: #{$breakpoint-mobile + 1}) {
+  .hud {
+    width: min(17rem, calc(100vw - #{$spacing-6}));
+  }
+}

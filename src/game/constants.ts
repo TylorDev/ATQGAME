@@ -1,0 +1,68 @@
+import type {
+  GroundHazardDefinition,
+  ObstacleDefinition,
+  TestDummyDefinition,
+} from "./types";
+
+export const METERS_PER_WORLD_UNIT = 1;
+export const ARENA_SIZE_METERS = 100;
+export const ARENA_HALF_SIZE_METERS = ARENA_SIZE_METERS / 2;
+export const ARENA_GRID_CELL_SIZE_METERS = 1;
+export const ARENA_GRID_DIVISIONS =
+  ARENA_SIZE_METERS / ARENA_GRID_CELL_SIZE_METERS;
+export const PLAYER_RADIUS_METERS = 0.45;
+export const PLAYER_BASE_SPEED_METERS_PER_SECOND = 5.5;
+export const PLAYER_AUTO_ATTACK_DAMAGE = 20;
+export const PLAYER_AUTO_ATTACK_INTERVAL_SECONDS = 1;
+export const PLAYER_AUTO_ATTACK_RANGE_METERS = 1;
+export const TARGET_DESELECT_DISTANCE_METERS = 50;
+export const HOLD_DELAY_MS = 180;
+export const ARRIVAL_DISTANCE_METERS = 0.08;
+export const MIN_DIRECTION_LENGTH_METERS = 0.025;
+export const MAX_FRAME_DELTA_SECONDS = 0.05;
+export const ROTATION_DAMPING = 14;
+export const CAMERA_DAMPING = 7;
+
+export const BURNING_TILE: Readonly<GroundHazardDefinition> = {
+  id: "burning-carpet",
+  xMeters: -3.6,
+  zMeters: -4.1,
+  widthMeters: 3,
+  depthMeters: 3,
+  damagePerTick: 100,
+  tickIntervalSeconds: 2,
+};
+
+export const TEST_DUMMY: Readonly<TestDummyDefinition> = {
+  id: "test-dummy",
+  xMeters: 4,
+  zMeters: 2,
+  maximumHealth: 10_000,
+};
+
+export const OBSTACLES: readonly ObstacleDefinition[] = [
+  {
+    id: "west-pillar",
+    xMeters: -4.2,
+    zMeters: 2.8,
+    widthMeters: 2.2,
+    depthMeters: 3.4,
+    heightMeters: 2.1,
+  },
+  {
+    id: "east-wall",
+    xMeters: 4.2,
+    zMeters: -2.4,
+    widthMeters: 3.8,
+    depthMeters: 1.4,
+    heightMeters: 1.65,
+  },
+  {
+    id: "north-block",
+    xMeters: 2.4,
+    zMeters: 4.8,
+    widthMeters: 2.6,
+    depthMeters: 2.2,
+    heightMeters: 2.55,
+  },
+];

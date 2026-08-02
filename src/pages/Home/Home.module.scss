@@ -1,0 +1,21 @@
+.caption {
+  position: absolute;
+  right: $spacing-5;
+  bottom: $spacing-4;
+  z-index: $z-index-overlay;
+  color: $color-text-disabled;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .caption {
+    right: $spacing-3;
+    bottom: $spacing-3;
+    left: $spacing-3;
+    text-align: right;
+  }
+}
