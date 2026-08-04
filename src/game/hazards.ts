@@ -6,6 +6,7 @@ export const BURNING_EFFECT: Readonly<ActiveEffect> = {
   name: "Ardiendo",
   description:
     "El suelo abrasador inflige 100 de daño base cada 2 s. La defensa reduce el daño.",
+  timerProgress: 1,
 };
 
 export interface BurningHazardSnapshot {

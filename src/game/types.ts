@@ -50,6 +50,8 @@ export interface ActiveEffect {
   kind: EffectKind;
   name: string;
   description: string;
+  /** A 0–1 value for a circular in-world timer. Persistent effects use 1. */
+  timerProgress: number;
 }
 
 export interface PlayerCombatSettings {

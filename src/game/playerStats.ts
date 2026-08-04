@@ -1,5 +1,7 @@
 import { PLAYER_BASE_SPEED_METERS_PER_SECOND } from "./constants";
+import { DEFAULT_PLAYER_COMBAT_SETTINGS } from "./combat";
 import { BURNING_EFFECT } from "./hazards";
+import { getEffectTimerProgress } from "./overheadStatus";
 import type {
   ActiveEffect,
   PlayerCombatSnapshot,
@@ -37,6 +39,7 @@ export const SPEED_BOOST_EFFECT: Readonly<ActiveEffect> = {
   kind: "buff",
   name: "Impulso",
   description: "Velocidad de movimiento aumentada un 80%.",
+  timerProgress: 0,
 };
 
 export const DEFAULT_PLAYER_DEBUG_STATS: Readonly<PlayerDebugStats> = {
@@ -44,14 +47,14 @@ export const DEFAULT_PLAYER_DEBUG_STATS: Readonly<PlayerDebugStats> = {
   isActive: false,
   durationRemainingMs: 0,
   cooldownRemainingMs: 0,
-  currentHealth: 1_000,
-  maximumHealth: 1_000,
+  currentHealth: DEFAULT_PLAYER_COMBAT_SETTINGS.maximumHealth,
+  maximumHealth: DEFAULT_PLAYER_COMBAT_SETTINGS.maximumHealth,
   defensePercent: 0,
 };
 
 export const DEFAULT_PLAYER_HUD_STATE: Readonly<PlayerHudState> = {
-  currentHealth: 1_000,
-  maximumHealth: 1_000,
+  currentHealth: DEFAULT_PLAYER_COMBAT_SETTINGS.maximumHealth,
+  maximumHealth: DEFAULT_PLAYER_COMBAT_SETTINGS.maximumHealth,
   defensePercent: 0,
   activeEffects: [],
   isDeathNoticeVisible: false,
@@ -118,7 +121,13 @@ export function getActivePlayerEffects(
   const effects: ActiveEffect[] = [];
 
   if (speedBoost.isActive) {
-    effects.push(SPEED_BOOST_EFFECT);
+    effects.push({
+      ...SPEED_BOOST_EFFECT,
+      timerProgress: getEffectTimerProgress(
+        speedBoost.durationRemainingMs,
+        SPEED_BOOST_DURATION_MS,
+      ),
+    });
   }
 
   if (isBurning) {

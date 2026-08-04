@@ -3,6 +3,7 @@ import type {
   ObstacleDefinition,
   TestDummyDefinition,
 } from "./types";
+import { PLAYER_BASE_STATS } from "./player";
 
 export const METERS_PER_WORLD_UNIT = 1;
 export const ARENA_SIZE_METERS = 100;
@@ -11,9 +12,12 @@ export const ARENA_GRID_CELL_SIZE_METERS = 1;
 export const ARENA_GRID_DIVISIONS =
   ARENA_SIZE_METERS / ARENA_GRID_CELL_SIZE_METERS;
 export const PLAYER_RADIUS_METERS = 0.45;
-export const PLAYER_BASE_SPEED_METERS_PER_SECOND = 5.5;
-export const PLAYER_AUTO_ATTACK_DAMAGE = 20;
-export const PLAYER_AUTO_ATTACK_INTERVAL_SECONDS = 1;
+export const PLAYER_BASE_SPEED_METERS_PER_SECOND: number =
+  PLAYER_BASE_STATS.movementAndControl.movementSpeed.value;
+export const PLAYER_AUTO_ATTACK_DAMAGE: number =
+  PLAYER_BASE_STATS.attack.autoAttackDamage;
+export const PLAYER_AUTO_ATTACK_INTERVAL_SECONDS: number =
+  1 / PLAYER_BASE_STATS.combatSpeeds.autoAttackSpeed.value;
 export const PLAYER_AUTO_ATTACK_RANGE_METERS = 1;
 export const TARGET_DESELECT_DISTANCE_METERS = 50;
 export const HOLD_DELAY_MS = 180;

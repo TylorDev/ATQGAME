@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
+  OverheadStatus,
+  type OverheadStatusHandle,
+} from "@/components/OverheadStatus/OverheadStatus";
+import {
   BufferAttribute,
   BufferGeometry,
   Group,
@@ -25,6 +29,7 @@ import {
 import {
   calculateCameraOffset,
   CAMERA_TARGET_HEIGHT,
+  CAMERA_WHEEL_ZOOM_STEP_METERS,
   type CameraSettings,
 } from "@/game/camera";
 import { MovementController } from "@/game/MovementController";
@@ -70,6 +75,7 @@ interface PlayerControllerProps {
   onTargetActivated: () => void;
   onTargetPursuitChange: (isActive: boolean) => void;
   onTargetDeselected: () => void;
+  onCameraDistanceChange: (distanceDeltaMeters: number) => void;
 }
 
 function areEffectsEqual(
@@ -137,6 +143,7 @@ export function PlayerController({
   onTargetActivated,
   onTargetPursuitChange,
   onTargetDeselected,
+  onCameraDistanceChange,
 }: PlayerControllerProps) {
   const groupRef = useRef<Group>(null);
   const pathLineRef = useRef<LineSegments>(null);
@@ -144,6 +151,7 @@ export function PlayerController({
   const selectedPathLineRef = useRef<LineSegments>(null);
   const selectedPathGeometryRef = useRef<BufferGeometry>(null);
   const destinationMarkerRef = useRef<Mesh>(null);
+  const overheadStatusRef = useRef<OverheadStatusHandle>(null);
   const pointerNdc = useRef(new Vector2());
   const pointerId = useRef<number | null>(null);
   const lastDebugSampleAtMs = useRef<number | null>(null);
@@ -283,6 +291,17 @@ export function PlayerController({
       event.preventDefault();
     };
 
+    const handleWheel = (event: WheelEvent): void => {
+      const direction = Math.sign(event.deltaY);
+
+      if (direction === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      onCameraDistanceChange(direction * CAMERA_WHEEL_ZOOM_STEP_METERS);
+    };
+
     const cancelInput = (): void => {
       controller.cancelInput();
       pointerId.current = null;
@@ -296,6 +315,7 @@ export function PlayerController({
 
     canvas.addEventListener("pointerdown", handlePointerDown);
     canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
     window.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("blur", cancelInput);
@@ -304,6 +324,7 @@ export function PlayerController({
     return () => {
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("wheel", handleWheel);
       window.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("blur", cancelInput);
@@ -315,6 +336,7 @@ export function PlayerController({
     gl,
     groundPlane,
     onTargetActivated,
+    onCameraDistanceChange,
     onTargetPursuitChange,
     rayIntersection,
     raycaster,
@@ -461,14 +483,20 @@ export function PlayerController({
     }
 
     const combatSnapshot = vitalityController.getSnapshot();
+    const activeEffects = getActivePlayerEffects(
+      speedBoost,
+      burningHazard.isActive,
+    );
     const playerHudState: PlayerHudState = {
       ...combatSnapshot,
-      activeEffects: getActivePlayerEffects(
-        speedBoost,
-        burningHazard.isActive,
-      ),
+      activeEffects,
       isDeathNoticeVisible: timestampMs < deathNoticeUntilMs.current,
     };
+
+    overheadStatusRef.current?.update({
+      ...combatSnapshot,
+      effects: activeEffects,
+    });
 
     if (!arePlayerHudStatesEqual(lastPlayerHudState.current, playerHudState)) {
       onPlayerHudChange(playerHudState);
@@ -600,6 +628,13 @@ export function PlayerController({
           <ringGeometry args={[0.55, 0.67, 32]} />
           <meshBasicMaterial color="#d7a96b" transparent opacity={0.82} />
         </mesh>
+
+        <OverheadStatus
+          ref={overheadStatusRef}
+          position={[0, 1.48, 0]}
+          healthColor="#74d641"
+          showEffects
+        />
       </group>
 
       <lineSegments ref={pathLineRef} visible={false} frustumCulled={false}>

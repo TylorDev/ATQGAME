@@ -1,7 +1,13 @@
-import { forwardRef } from "react";
-import type { ThreeEvent } from "@react-three/fiber";
+import { forwardRef, useRef } from "react";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import type { Group } from "three";
+import {
+  OverheadStatus,
+  type OverheadStatusHandle,
+} from "@/components/OverheadStatus/OverheadStatus";
 import type { TestDummyDefinition, TestDummySnapshot } from "@/game/types";
+
+const NO_ACTIVE_EFFECTS = [] as const;
 
 interface TestDummyProps {
   definition: TestDummyDefinition;
@@ -14,6 +20,16 @@ export const TestDummy = forwardRef<Group, TestDummyProps>(function TestDummy(
   { definition, snapshot, selected, onActivate },
   ref,
 ) {
+  const overheadStatusRef = useRef<OverheadStatusHandle>(null);
+
+  useFrame(() => {
+    overheadStatusRef.current?.update({
+      currentHealth: snapshot.currentHealth,
+      maximumHealth: snapshot.maximumHealth,
+      effects: NO_ACTIVE_EFFECTS,
+    });
+  });
+
   const handlePointerDown = (event: ThreeEvent<PointerEvent>): void => {
     if (event.nativeEvent.button !== 0 && event.nativeEvent.button !== 2) {
       return;
@@ -66,6 +82,12 @@ export const TestDummy = forwardRef<Group, TestDummyProps>(function TestDummy(
           depthTest={false}
         />
       </mesh>
+
+      <OverheadStatus
+        ref={overheadStatusRef}
+        position={[0, 2.7, 0]}
+        healthColor="#f0834f"
+      />
     </group>
   );
 });

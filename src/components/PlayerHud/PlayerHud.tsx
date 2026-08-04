@@ -1,3 +1,4 @@
+import { HUD_KEYBINDINGS } from "@/game/keybindings";
 import type { PlayerHudState, TestDummySnapshot } from "@/game/types";
 import styles from "./PlayerHud.module.scss";
 
@@ -125,18 +126,12 @@ export function PlayerHud({ state, testDummy }: PlayerHudProps) {
         ) : null}
 
         <div className={styles.rule} />
-        <p className={styles.instruction}>
-          <span className={styles.input}>LMB</span>
-          <span>Selecciona o reanuda la persecución del muñeco.</span>
-        </p>
-        <p className={styles.instruction}>
-          <span className={styles.input}>RMB</span>
-          <span>En el mapa: camina y pausa. En el muñeco: reanuda.</span>
-        </p>
-        <p className={styles.instruction}>
-          <span className={styles.input}>F</span>
-          <span>Impulso ×1,8 durante 5 s. Cooldown: 15 s.</span>
-        </p>
+        {HUD_KEYBINDINGS.map((binding) => (
+          <p className={styles.instruction} key={binding.id}>
+            <span className={styles.input}>{binding.input}</span>
+            <span>{binding.description}</span>
+          </p>
+        ))}
       </aside>
 
       {state.isDeathNoticeVisible ? (

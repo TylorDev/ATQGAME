@@ -1,4 +1,5 @@
 import type { PlayerCombatSettings, PlayerCombatSnapshot } from "./types";
+import { PLAYER_BASE_STATS } from "./player";
 
 export const PLAYER_MAXIMUM_HEALTH_MIN = 100;
 export const PLAYER_MAXIMUM_HEALTH_MAX = 5_000;
@@ -8,7 +9,7 @@ export const PLAYER_DEFENSE_PERCENT_MAX = 100;
 export const PLAYER_DEFENSE_PERCENT_STEP = 1;
 
 export const DEFAULT_PLAYER_COMBAT_SETTINGS: Readonly<PlayerCombatSettings> = {
-  maximumHealth: 1_000,
+  maximumHealth: PLAYER_BASE_STATS.defensiveAttributes.maximumHealth,
   defensePercent: 0,
 };
 

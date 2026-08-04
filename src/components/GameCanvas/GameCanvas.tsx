@@ -22,6 +22,7 @@ interface GameCanvasProps {
   onDebugStatsChange: (stats: PlayerDebugStats) => void;
   onPlayerHudChange: (state: PlayerHudState) => void;
   onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
+  onCameraDistanceChange: (distanceDeltaMeters: number) => void;
 }
 
 export function GameCanvas({
@@ -31,6 +32,7 @@ export function GameCanvas({
   onDebugStatsChange,
   onPlayerHudChange,
   onTestDummyHudChange,
+  onCameraDistanceChange,
 }: GameCanvasProps) {
   const [isTestDummySelected, setIsTestDummySelected] = useState(false);
   const [isTestDummyPursuitActive, setIsTestDummyPursuitActive] =
@@ -115,6 +117,7 @@ export function GameCanvas({
           onTargetActivated={handleTestDummyActivate}
           onTargetPursuitChange={handleTestDummyPursuitChange}
           onTargetDeselected={handleTestDummyDeselected}
+          onCameraDistanceChange={onCameraDistanceChange}
         />
       </Canvas>
     </div>

@@ -1,0 +1,208 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: $z-index-modal;
+  display: grid;
+  place-items: center;
+  padding: $spacing-6;
+  pointer-events: none;
+}
+
+.panel {
+  width: min(46rem, 100%);
+  max-height: min(46rem, calc(100vh - #{$spacing-8}));
+  overflow-y: auto;
+  padding: $spacing-6;
+  color: $color-text-primary;
+  background:
+    linear-gradient(145deg, rgb(34 47 63 / 98%), rgb(16 23 34 / 98%)),
+    $color-surface;
+  border: 1px solid rgb(215 169 107 / 48%);
+  border-radius: $border-radius-lg;
+  box-shadow: $shadow-lg;
+  pointer-events: auto;
+}
+
+.header,
+.sectionHeader,
+.activeRow,
+.placeholderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-4;
+}
+
+.header {
+  padding-bottom: $spacing-5;
+  border-bottom: 1px solid $border-color-default;
+}
+
+.eyebrow {
+  margin: 0 0 $spacing-1;
+  color: $color-primary;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h2 {
+  font-family: $font-family-primary;
+  font-size: $font-size-2xl;
+  line-height: $line-height-sm;
+}
+
+h3 {
+  font-size: $font-size-lg;
+}
+
+h4 {
+  color: $color-text-secondary;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.close {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  color: $color-text-primary;
+  background: $color-surface-raised;
+  border: 1px solid $border-color-default;
+  border-radius: $border-radius-full;
+  cursor: pointer;
+  font-size: $font-size-xl;
+  line-height: 1;
+  place-items: center;
+  transition: border-color $transition-fast, color $transition-fast, background-color $transition-fast;
+}
+
+.close:hover,
+.close:focus-visible {
+  color: $color-primary;
+  background: rgb(215 169 107 / 12%);
+  border-color: $color-primary;
+  outline: none;
+}
+
+.activeSection,
+.placeholderSection {
+  padding-top: $spacing-5;
+}
+
+.placeholderSection {
+  margin-top: $spacing-5;
+  border-top: 1px solid $border-color-default;
+}
+
+.sectionHeader {
+  align-items: flex-start;
+  margin-bottom: $spacing-4;
+}
+
+.sectionHeader p {
+  margin-top: $spacing-1;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+}
+
+.activeBadge,
+.placeholderBadge,
+.status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: $border-radius-full;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.04em;
+}
+
+.activeBadge {
+  padding: $spacing-1 $spacing-3;
+  color: $color-background;
+  background: $color-secondary;
+}
+
+.placeholderBadge {
+  padding: $spacing-1 $spacing-3;
+  color: $color-text-disabled;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 10%);
+}
+
+.list {
+  display: grid;
+  gap: $spacing-2;
+}
+
+.activeRow,
+.placeholderRow {
+  min-height: 3.5rem;
+  padding: $spacing-3 $spacing-4;
+  border-radius: $border-radius-md;
+}
+
+.activeRow {
+  background: linear-gradient(90deg, rgb(99 194 180 / 19%), rgb(99 194 180 / 4%));
+  border: 1px solid rgb(99 194 180 / 34%);
+}
+
+.placeholderRow {
+  background: rgb(255 255 255 / 2%);
+  border: 1px solid rgb(255 255 255 / 6%);
+  opacity: 0.62;
+}
+
+.statLabel,
+.status {
+  display: block;
+}
+
+.statLabel {
+  font-weight: $font-weight-semibold;
+}
+
+.status {
+  margin-top: $spacing-1;
+  color: $color-text-secondary;
+}
+
+.activeRow .status {
+  color: $color-secondary;
+}
+
+.value {
+  color: $color-primary;
+  font-family: $font-family-utility;
+  font-size: $font-size-md;
+  text-align: right;
+}
+
+.activeRow .value {
+  color: #9ee6dc;
+}
+
+.categories {
+  display: grid;
+  gap: $spacing-5;
+}
+
+.category {
+  display: grid;
+  gap: $spacing-3;
+}

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  adjustCameraDistance,
   calculateCameraOffset,
   CAMERA_STORAGE_KEY,
+  CAMERA_WHEEL_ZOOM_STEP_METERS,
   DEFAULT_CAMERA_SETTINGS,
   loadCameraSettings,
   normalizeCameraSettings,
@@ -10,6 +12,36 @@ import {
 } from "./camera";
 
 describe("camera settings", () => {
+  it("adjusts camera distance by the wheel step without changing inclination", () => {
+    expect(
+      adjustCameraDistance(
+        { distance: 13.4, pitchDegrees: 42 },
+        -CAMERA_WHEEL_ZOOM_STEP_METERS,
+      ),
+    ).toEqual({ distance: 11.4, pitchDegrees: 42 });
+    expect(
+      adjustCameraDistance(
+        { distance: 13.4, pitchDegrees: 42 },
+        CAMERA_WHEEL_ZOOM_STEP_METERS,
+      ),
+    ).toEqual({ distance: 15.4, pitchDegrees: 42 });
+  });
+
+  it("clamps wheel zoom to the camera distance range", () => {
+    expect(
+      adjustCameraDistance(
+        { distance: 6, pitchDegrees: 42 },
+        -CAMERA_WHEEL_ZOOM_STEP_METERS,
+      ),
+    ).toEqual({ distance: 6, pitchDegrees: 42 });
+    expect(
+      adjustCameraDistance(
+        { distance: 22, pitchDegrees: 42 },
+        CAMERA_WHEEL_ZOOM_STEP_METERS,
+      ),
+    ).toEqual({ distance: 22, pitchDegrees: 42 });
+  });
+
   it("recreates the original elevated camera offset", () => {
     const offset = calculateCameraOffset({
       distance: 13.4,

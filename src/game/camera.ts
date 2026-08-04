@@ -18,6 +18,7 @@ export const CAMERA_STORAGE_KEY = "arena-rpg.debug-camera.v1";
 export const CAMERA_DISTANCE_MIN = 6;
 export const CAMERA_DISTANCE_MAX = 22;
 export const CAMERA_DISTANCE_STEP = 0.1;
+export const CAMERA_WHEEL_ZOOM_STEP_METERS = 2;
 export const CAMERA_PITCH_MIN = 20;
 export const CAMERA_PITCH_MAX = 75;
 export const CAMERA_PITCH_STEP = 1;
@@ -81,6 +82,25 @@ export function normalizeCameraSettings(value: unknown): CameraSettings {
       CAMERA_PITCH_MIN,
       CAMERA_PITCH_MAX,
       CAMERA_PITCH_STEP,
+    ),
+  };
+}
+
+/** Adjusts the camera distance in meters while preserving its inclination. */
+export function adjustCameraDistance(
+  settings: CameraSettings,
+  distanceDeltaMeters: number,
+): CameraSettings {
+  const normalizedSettings = normalizeCameraSettings(settings);
+
+  return {
+    ...normalizedSettings,
+    distance: normalizeValue(
+      normalizedSettings.distance + distanceDeltaMeters,
+      DEFAULT_CAMERA_SETTINGS.distance,
+      CAMERA_DISTANCE_MIN,
+      CAMERA_DISTANCE_MAX,
+      CAMERA_DISTANCE_STEP,
     ),
   };
 }

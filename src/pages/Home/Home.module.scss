@@ -11,6 +11,33 @@
   text-transform: uppercase;
 }
 
+.settingsButton {
+  position: absolute;
+  right: $spacing-5;
+  bottom: $spacing-8;
+  z-index: $z-index-overlay;
+  padding: $spacing-2 $spacing-4;
+  color: $color-text-primary;
+  background: rgb(25 34 48 / 92%);
+  border: 1px solid rgb(215 169 107 / 48%);
+  border-radius: $border-radius-md;
+  box-shadow: $shadow-sm;
+  cursor: pointer;
+  font-family: $font-family-utility;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.04em;
+  transition: color $transition-fast, background-color $transition-fast, border-color $transition-fast;
+}
+
+.settingsButton:hover,
+.settingsButton:focus-visible {
+  color: $color-background;
+  background: $color-primary;
+  border-color: $color-primary;
+  outline: none;
+}
+
 @media (max-width: $breakpoint-mobile) {
   .caption {
     right: $spacing-3;
