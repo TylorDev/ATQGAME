@@ -1,23 +1,36 @@
-import { memo, useCallback, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Canvas } from "@react-three/fiber";
+import { Group, Vector2 } from "three";
+import { BrowserGameInput } from "@/components/BrowserGameInput/BrowserGameInput";
+import { DebugPath } from "@/components/DebugPath/DebugPath";
+import { GameEventBridge } from "@/components/GameEventBridge/GameEventBridge";
+import { GameFrameRunner } from "@/components/GameFrameRunner/GameFrameRunner";
 import {
   OverheadStatusLayer,
   OverheadStatusRegistry,
 } from "@/components/OverheadStatus/OverheadStatusSystem";
+import { OverheadFrameBridge } from "@/components/OverheadFrameBridge/OverheadFrameBridge";
+import { PerformanceLoadView } from "@/components/PerformanceLoadView/PerformanceLoadView";
+import { PerformanceTuner } from "@/components/PerformanceTuner/PerformanceTuner";
+import { PlayerView } from "@/components/PlayerView/PlayerView";
+import { TestDummyView } from "@/components/TestDummyView/TestDummyView";
+import { ThirdPersonCamera } from "@/components/ThirdPersonCamera/ThirdPersonCamera";
+import { UiSnapshotPublisher } from "@/components/UiSnapshotPublisher/UiSnapshotPublisher";
 import {
-  PerformanceLoadScenario,
-  type PerformanceLoadScenarioHandle,
-} from "@/components/PerformanceLoadScenario/PerformanceLoadScenario";
-import {
-  TestDummy,
-  type TestDummyHandle,
-} from "@/components/TestDummy/TestDummy";
+  GameRuntimeContext,
+  type GameInputFrameState,
+  type GameRuntimeServices,
+} from "@/contexts/GameRuntimeContext";
 import type { CameraSettings } from "@/game/camera";
 import { TEST_DUMMY } from "@/game/constants";
-import {
-  GameSimulation,
-  PERFORMANCE_LOAD_VISIBLE_ENTITIES,
-} from "@/game/GameSimulation";
+import { createDefaultGameRuntime } from "@/game/core/createDefaultGameRuntime";
+import { PERFORMANCE_LOAD_VISIBLE_ENTITIES } from "@/game/core/PerformanceLoadState";
 import type { ResolvedGraphicsQuality } from "@/game/graphicsQuality";
 import type { PlayerDebugStats } from "@/game/playerStats";
 import type {
@@ -26,7 +39,6 @@ import type {
   TestDummySnapshot,
 } from "@/game/types";
 import { Arena } from "./Arena";
-import { PlayerController } from "./PlayerController";
 import styles from "./GameCanvas.module.scss";
 
 interface GameCanvasProps {
@@ -48,6 +60,18 @@ function isPerformanceModeEnabled(): boolean {
   );
 }
 
+function createInputFrameState(): GameInputFrameState {
+  return {
+    pointerNdc: new Vector2(),
+    pointerId: null,
+    rightPressStartedAtMs: null,
+    groundPoint: { x: 0, z: 0 },
+    hasGroundHit: false,
+    hasPendingFacingPoint: false,
+    raycastMetrics: { ground: 0, target: 0 },
+  };
+}
+
 function GameCanvasComponent({
   cameraSettings,
   combatSettings,
@@ -60,28 +84,38 @@ function GameCanvasComponent({
   onCameraDistanceChange,
 }: GameCanvasProps) {
   const [performanceMode] = useState(isPerformanceModeEnabled);
-  const [simulation] = useState(
-    () =>
-      new GameSimulation({
-        initialTimeMs: performance.now(),
-        wallClockOriginMs: Date.now(),
-        playerName,
-        combatSettings,
-        performanceLoadEnabled: performanceMode,
-      }),
+  const [runtime] = useState(() =>
+    createDefaultGameRuntime({
+      initialTimeMs: performance.now(),
+      wallClockOriginMs: Date.now(),
+      playerName,
+      combatSettings,
+      performanceLoadEnabled: performanceMode,
+    }),
   );
   const [overheadRegistry] = useState(() => new OverheadStatusRegistry(128));
-  const [isTestDummySelected, setIsTestDummySelected] = useState(false);
-  const testDummyRef = useRef<TestDummyHandle>(null);
-  const performanceLoadRef = useRef<PerformanceLoadScenarioHandle>(null);
+  const [input] = useState(createInputFrameState);
+  const targetObjectRef = useRef<Group>(null);
+  const services = useMemo<GameRuntimeServices>(
+    () => ({
+      runtime,
+      overheadRegistry,
+      input,
+      targetObjectRef,
+    }),
+    [input, overheadRegistry, runtime],
+  );
 
-  const handleTestDummyActivate = useCallback((): void => {
-    simulation.enqueueCommand({ type: "activate-target" });
-  }, [simulation]);
+  useEffect(() => {
+    runtime.dispatch({
+      type: "update-player-combat-settings",
+      settings: combatSettings,
+    });
+  }, [combatSettings, runtime]);
 
-  const handleTargetSelectionChange = useCallback((selected: boolean): void => {
-    setIsTestDummySelected(selected);
-  }, []);
+  useEffect(() => {
+    runtime.dispatch({ type: "update-player-name", playerName });
+  }, [playerName, runtime]);
 
   const shadowMapSize = quality.shadowMapSize || 512;
 
@@ -97,53 +131,53 @@ function GameCanvasComponent({
           powerPreference: "high-performance",
         }}
       >
-        <color attach="background" args={["#101722"]} />
-        <fog attach="fog" args={["#101722", 42, 105]} />
-        <hemisphereLight args={["#9eb9c6", "#222832", 1.7]} />
-        <directionalLight
-          position={[7, 12, 5]}
-          intensity={2.1}
-          color="#f2d7ad"
-          castShadow={quality.shadows}
-          shadow-mapSize={[shadowMapSize, shadowMapSize]}
-          shadow-camera-left={-15}
-          shadow-camera-right={15}
-          shadow-camera-top={15}
-          shadow-camera-bottom={-15}
-        />
-        <Arena />
-        <TestDummy
-          ref={testDummyRef}
-          definition={TEST_DUMMY}
-          selected={isTestDummySelected}
-          onActivate={handleTestDummyActivate}
-          registry={overheadRegistry}
-        />
-        {performanceMode ? (
-          <PerformanceLoadScenario
-            ref={performanceLoadRef}
-            registry={overheadRegistry}
-            visibleCount={PERFORMANCE_LOAD_VISIBLE_ENTITIES}
+        <GameRuntimeContext.Provider value={services}>
+          <color attach="background" args={["#101722"]} />
+          <fog attach="fog" args={["#101722", 42, 105]} />
+          <hemisphereLight args={["#9eb9c6", "#222832", 1.7]} />
+          <directionalLight
+            position={[7, 12, 5]}
+            intensity={2.1}
+            color="#f2d7ad"
+            castShadow={quality.shadows}
+            shadow-mapSize={[shadowMapSize, shadowMapSize]}
+            shadow-camera-left={-15}
+            shadow-camera-right={15}
+            shadow-camera-top={15}
+            shadow-camera-bottom={-15}
           />
-        ) : null}
-        <PlayerController
-          cameraSettings={cameraSettings}
-          combatSettings={combatSettings}
-          debugVisible={debugVisible}
-          playerName={playerName}
-          simulation={simulation}
-          overheadRegistry={overheadRegistry}
-          testDummyRef={testDummyRef}
-          performanceLoadRef={performanceLoadRef}
-          performanceMode={performanceMode}
-          quality={quality}
-          onDebugStatsChange={onDebugStatsChange}
-          onPlayerHudChange={onPlayerHudChange}
-          onTestDummyHudChange={onTestDummyHudChange}
-          onTargetSelectionChange={handleTargetSelectionChange}
-          onCameraDistanceChange={onCameraDistanceChange}
-        />
-        <OverheadStatusLayer registry={overheadRegistry} />
+
+          <Arena />
+          <TestDummyView definition={TEST_DUMMY} />
+          {performanceMode ? (
+            <PerformanceLoadView
+              visibleCount={PERFORMANCE_LOAD_VISIBLE_ENTITIES}
+            />
+          ) : null}
+          <PlayerView />
+          <DebugPath visible={debugVisible} />
+          <OverheadStatusLayer registry={overheadRegistry} />
+
+          <BrowserGameInput
+            onCameraDistanceChange={onCameraDistanceChange}
+          />
+          <GameFrameRunner />
+          <ThirdPersonCamera settings={cameraSettings} />
+          <GameEventBridge
+            onTestDummyHudChange={onTestDummyHudChange}
+          />
+          <UiSnapshotPublisher
+            debugVisible={debugVisible}
+            onDebugStatsChange={onDebugStatsChange}
+            onPlayerHudChange={onPlayerHudChange}
+            onTestDummyHudChange={onTestDummyHudChange}
+          />
+          <OverheadFrameBridge />
+          <PerformanceTuner
+            performanceMode={performanceMode}
+            quality={quality}
+          />
+        </GameRuntimeContext.Provider>
       </Canvas>
     </div>
   );

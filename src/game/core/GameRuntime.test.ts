@@ -1,25 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { BURNING_TILE, TEST_DUMMY } from "./constants";
-import type { PublishAreaPresenceLogInput } from "./gameLog";
+import { BURNING_TILE, TEST_DUMMY } from "../constants";
+import type { PublishAreaPresenceLogInput } from "../gameLog";
 import {
-  GameSimulation,
   PERFORMANCE_LOAD_ACTIVE_ENTITIES,
   PERFORMANCE_LOAD_VISIBLE_ENTITIES,
-  SIMULATION_TICK_SECONDS,
-} from "./GameSimulation";
+} from "./PerformanceLoadState";
+import { SIMULATION_TICK_SECONDS } from "./GameClock";
+import { createDefaultGameRuntime } from "./createDefaultGameRuntime";
+import type { GameRuntime } from "./GameRuntime";
+import { runGameFrame } from "./runGameFrame";
+import { createDefaultGameSystems } from "../systems/createDefaultGameSystems";
 
 function runMovementAtRenderRate(renderFramesPerSecond: number): number {
-  const simulation = new GameSimulation({
+  const simulation = createDefaultGameRuntime({
     initialTimeMs: 0,
     wallClockOriginMs: 0,
   });
-  simulation.enqueueCommand({
-    type: "begin-right-press",
+  simulation.dispatch({
+    type: "start-ground-move",
     point: { x: 20, z: 0 },
     timestampMs: 0,
   });
-  simulation.enqueueCommand({
-    type: "end-right-press",
+  simulation.dispatch({
+    type: "finish-ground-move",
     timestampMs: 100,
   });
 
@@ -27,7 +30,7 @@ function runMovementAtRenderRate(renderFramesPerSecond: number): number {
     simulation.advanceFrame(1 / renderFramesPerSecond);
   }
 
-  return simulation.getRenderState().currentPlayerPosition.x;
+  return simulation.getRenderFrame().currentPlayerPosition.x;
 }
 
 interface VitalityChange {
@@ -36,7 +39,7 @@ interface VitalityChange {
 }
 
 function advanceUntilVitalityChange(
-  simulation: GameSimulation,
+  simulation: GameRuntime,
   predicate: (change: VitalityChange) => boolean,
   maximumTicks: number,
 ): VitalityChange[] {
@@ -66,20 +69,20 @@ function advanceUntilVitalityChange(
   return changes;
 }
 
-function moveToBurningTile(simulation: GameSimulation): void {
-  simulation.enqueueCommand({
-    type: "begin-right-press",
+function moveToBurningTile(simulation: GameRuntime): void {
+  simulation.dispatch({
+    type: "start-ground-move",
     point: { x: BURNING_TILE.xMeters, z: BURNING_TILE.zMeters },
     timestampMs: 0,
   });
-  simulation.enqueueCommand({
-    type: "end-right-press",
+  simulation.dispatch({
+    type: "finish-ground-move",
     timestampMs: 100,
   });
 }
 
 function drainAreaEvents(
-  simulation: GameSimulation,
+  simulation: GameRuntime,
 ): PublishAreaPresenceLogInput[] {
   const events: PublishAreaPresenceLogInput[] = [];
 
@@ -93,11 +96,11 @@ function drainAreaEvents(
 }
 
 function countAreaEventsAtRenderRate(renderFramesPerSecond: number): number {
-  const simulation = new GameSimulation({
+  const simulation = createDefaultGameRuntime({
     initialTimeMs: 0,
     wallClockOriginMs: 0,
   });
-  simulation.enqueueCommand({ type: "toggle-player-area" });
+  simulation.dispatch({ type: "toggle-player-area" });
   let eventCount = 0;
 
   for (let frame = 0; frame < renderFramesPerSecond; frame += 1) {
@@ -108,7 +111,7 @@ function countAreaEventsAtRenderRate(renderFramesPerSecond: number): number {
   return eventCount;
 }
 
-describe("GameSimulation", () => {
+describe("GameRuntime", () => {
   it("produces the same fixed-step movement at 30, 60 and 144 render FPS", () => {
     const atThirty = runMovementAtRenderRate(30);
     const atSixty = runMovementAtRenderRate(60);
@@ -119,23 +122,23 @@ describe("GameSimulation", () => {
   });
 
   it("redirects the first held input on the next fixed tick without stopping", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
-    simulation.enqueueCommand({
-      type: "begin-right-press",
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
+    simulation.dispatch({
+      type: "start-ground-move",
       point: { x: 20, z: 0 },
       timestampMs: 5_000,
     });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
     const positionBeforeTurn =
-      simulation.getRenderState().currentPlayerPosition.x;
+      simulation.getRenderFrame().currentPlayerPosition.x;
 
-    simulation.enqueueCommand({
-      type: "update-pointer-ground",
+    simulation.dispatch({
+      type: "steer-ground-move",
       point: { x: -20, z: 0 },
     });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    const renderState = simulation.getRenderState();
+    const renderState = simulation.getRenderFrame();
     expect(renderState.currentPlayerPosition.x).toBeLessThan(
       positionBeforeTurn,
     );
@@ -145,53 +148,55 @@ describe("GameSimulation", () => {
   });
 
   it("caps catch-up at three fixed ticks and can discard the accumulator", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
 
-    const alpha = simulation.advanceFrame(1);
-    expect(simulation.getRenderState().simulationTimeMs).toBeCloseTo(50, 5);
-    expect(alpha).toBeLessThan(1);
+    const frame = simulation.advanceFrame(1);
+    expect(simulation.getRenderFrame().simulationTimeMs).toBeCloseTo(50, 5);
+    expect(frame.interpolationAlpha).toBeLessThan(1);
 
     simulation.resetFrameAccumulator();
-    const halfTickAlpha = simulation.advanceFrame(SIMULATION_TICK_SECONDS / 2);
-    expect(halfTickAlpha).toBeCloseTo(0.5, 5);
-    expect(simulation.getRenderState().simulationTimeMs).toBeCloseTo(50, 5);
+    const halfTickFrame = simulation.advanceFrame(
+      SIMULATION_TICK_SECONDS / 2,
+    );
+    expect(halfTickFrame.interpolationAlpha).toBeCloseTo(0.5, 5);
+    expect(simulation.getRenderFrame().simulationTimeMs).toBeCloseTo(50, 5);
   });
 
   it("keeps render state and hot-path point identities stable", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
-    const state = simulation.getRenderState();
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
+    const state = simulation.getRenderFrame();
     const movement = state.movement;
     const position = movement.position;
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    expect(simulation.getRenderState()).toBe(state);
-    expect(simulation.getRenderState().movement).toBe(movement);
-    expect(simulation.getRenderState().movement.position).toBe(position);
+    expect(simulation.getRenderFrame()).toBe(state);
+    expect(simulation.getRenderFrame().movement).toBe(movement);
+    expect(simulation.getRenderFrame().movement.position).toBe(position);
     expect(simulation.createUiSnapshot()).not.toBe(
       simulation.createUiSnapshot(),
     );
   });
 
   it("starts with the player area disabled and emits no presence events", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    expect(simulation.getRenderState().playerAreaActive).toBe(false);
+    expect(simulation.getRenderFrame().playerAreaActive).toBe(false);
     expect(drainAreaEvents(simulation)).toEqual([]);
   });
 
   it("toggles the area and reports the initial dummy contact", () => {
-    const simulation = new GameSimulation({
+    const simulation = createDefaultGameRuntime({
       initialTimeMs: 0,
       wallClockOriginMs: 0,
     });
-    simulation.enqueueCommand({ type: "toggle-player-area" });
+    simulation.dispatch({ type: "toggle-player-area" });
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    expect(simulation.getRenderState().playerAreaActive).toBe(true);
+    expect(simulation.getRenderFrame().playerAreaActive).toBe(true);
     expect(drainAreaEvents(simulation)).toEqual([
       expect.objectContaining({
         occurredAtMs: SIMULATION_TICK_SECONDS * 1_000,
@@ -209,15 +214,15 @@ describe("GameSimulation", () => {
   });
 
   it("emits one deactivation and stops reporting until reactivated", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
-    simulation.enqueueCommand({ type: "toggle-player-area" });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
+    simulation.dispatch({ type: "toggle-player-area" });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
     drainAreaEvents(simulation);
 
-    simulation.enqueueCommand({ type: "toggle-player-area" });
+    simulation.dispatch({ type: "toggle-player-area" });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    expect(simulation.getRenderState().playerAreaActive).toBe(false);
+    expect(simulation.getRenderFrame().playerAreaActive).toBe(false);
     expect(drainAreaEvents(simulation).map((event) => event.status)).toEqual([
       "deactivated",
     ]);
@@ -227,9 +232,12 @@ describe("GameSimulation", () => {
   });
 
   it("reports geometry independently of target selection", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
-    simulation.enqueueCommand({ type: "activate-target" });
-    simulation.enqueueCommand({ type: "toggle-player-area" });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
+    simulation.dispatch({
+      type: "activate-target",
+      targetId: TEST_DUMMY.id,
+    });
+    simulation.dispatch({ type: "toggle-player-area" });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
     expect(simulation.createUiSnapshot().targetSelected).toBe(true);
@@ -239,26 +247,72 @@ describe("GameSimulation", () => {
   });
 
   it("exposes the deterministic 50-active/100-visible load scenario", () => {
-    const simulation = new GameSimulation({
+    const simulation = createDefaultGameRuntime({
       initialTimeMs: 0,
       performanceLoadEnabled: true,
     });
-    const load = simulation.getRenderState().performanceLoad;
+    const load = simulation.getRenderFrame().performanceLoad;
 
     expect(load?.activeCount).toBe(PERFORMANCE_LOAD_ACTIVE_ENTITIES);
     expect(load?.visibleCount).toBe(PERFORMANCE_LOAD_VISIBLE_ENTITIES);
     const positions = load?.currentPositions;
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
-    expect(simulation.getRenderState().performanceLoad?.currentPositions).toBe(
+    expect(simulation.getRenderFrame().performanceLoad?.currentPositions).toBe(
       positions,
     );
   });
 
+  it("registers systems in the behavior-preserving fixed-step order", () => {
+    expect(createDefaultGameSystems(true).map((system) => system.id)).toEqual([
+      "commands",
+      "movement",
+      "player-area",
+      "targeting",
+      "respawn",
+      "auto-attack",
+      "hazard",
+      "effects",
+      "performance-load",
+    ]);
+  });
+
+  it("advances gameplay through the frame driver without any mounted view", () => {
+    const runtime = createDefaultGameRuntime({
+      initialTimeMs: 0,
+      performanceLoadEnabled: true,
+    });
+    const load = runtime.getRenderFrame().performanceLoad;
+    const initialLoadX = load?.currentPositions[0];
+    runtime.dispatch({
+      type: "activate-ability",
+      abilityId: "speed-boost",
+    });
+    runtime.dispatch({
+      type: "activate-target",
+      targetId: TEST_DUMMY.id,
+    });
+
+    for (let tick = 0; tick < 120; tick += 1) {
+      runGameFrame(runtime, SIMULATION_TICK_SECONDS);
+    }
+
+    const snapshot = runtime.createUiSnapshot();
+    expect(runtime.getRenderFrame().simulationTimeMs).toBeCloseTo(2_000, 5);
+    expect(snapshot.debug.cooldownRemainingMs).toBeLessThan(15_000);
+    expect(snapshot.testDummy.currentHealth).toBeLessThan(
+      snapshot.testDummy.maximumHealth,
+    );
+    expect(load?.currentPositions[0]).not.toBe(initialLoadX);
+  });
+
   it("emits selection once and exposes the selected target in the UI snapshot", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
     const eventTypes: string[] = [];
     simulation.consumeCriticalUiDirty();
-    simulation.enqueueCommand({ type: "activate-target" });
+    simulation.dispatch({
+      type: "activate-target",
+      targetId: TEST_DUMMY.id,
+    });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
     simulation.drainEvents((event) => eventTypes.push(event.type));
 
@@ -268,8 +322,11 @@ describe("GameSimulation", () => {
   });
 
   it("emits damage and recovery signals when the test dummy respawns", () => {
-    const simulation = new GameSimulation({ initialTimeMs: 0 });
-    simulation.enqueueCommand({ type: "activate-target" });
+    const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
+    simulation.dispatch({
+      type: "activate-target",
+      targetId: TEST_DUMMY.id,
+    });
 
     const changes = advanceUntilVitalityChange(
       simulation,
@@ -289,7 +346,7 @@ describe("GameSimulation", () => {
   });
 
   it("emits zero when defense fully negates a valid damage tick", () => {
-    const simulation = new GameSimulation({
+    const simulation = createDefaultGameRuntime({
       initialTimeMs: 0,
       combatSettings: { maximumHealth: 100, defensePercent: 100 },
     });
@@ -309,7 +366,7 @@ describe("GameSimulation", () => {
   });
 
   it("emits stacked damage and recovery when the player dies", () => {
-    const simulation = new GameSimulation({
+    const simulation = createDefaultGameRuntime({
       initialTimeMs: 0,
       combatSettings: { maximumHealth: 100, defensePercent: 0 },
     });
