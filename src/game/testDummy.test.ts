@@ -13,6 +13,7 @@ const definition: TestDummyDefinition = {
   displayName: "Muñeco de pruebas",
   xMeters: 0,
   zMeters: 0,
+  footprintRadiusMeters: 0.72,
   maximumHealth: 100,
 };
 

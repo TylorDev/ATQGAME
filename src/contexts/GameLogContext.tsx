@@ -69,6 +69,10 @@ export function usePublishDamageLog() {
   return useGameLogStore().publishDamage;
 }
 
+export function usePublishAreaPresenceLog() {
+  return useGameLogStore().publishAreaPresence;
+}
+
 export function useClearGameLog() {
   return useGameLogStore().clear;
 }

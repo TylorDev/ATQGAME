@@ -1,6 +1,6 @@
 .caption {
   position: absolute;
-  right: $spacing-5;
+  left: $spacing-5;
   bottom: $spacing-4;
   z-index: $z-index-overlay;
   color: $color-text-disabled;
@@ -40,9 +40,9 @@
 
 @media (max-width: $breakpoint-mobile) {
   .caption {
-    right: $spacing-3;
+    right: auto;
     bottom: $spacing-3;
     left: $spacing-3;
-    text-align: right;
+    text-align: left;
   }
 }

@@ -107,7 +107,9 @@ export const TestDummy = forwardRef<TestDummyHandle, TestDummyProps>(
         onPointerDown={handlePointerDown}
       >
         <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[0.62, 0.72, 0.36, 18]} />
+          <cylinderGeometry
+            args={[0.62, definition.footprintRadiusMeters, 0.36, 18]}
+          />
           <meshStandardMaterial color="#4e4039" roughness={0.78} />
         </mesh>
         <mesh position={[0, 1.02, 0]} castShadow receiveShadow>

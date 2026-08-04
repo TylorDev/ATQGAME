@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createGameLogStore,
+  formatAreaPresenceLogMessage,
   formatDamageLogEntry,
   formatDamageLogMessage,
+  formatGameLogEntry,
   MAX_GAME_LOG_ENTRIES,
+  type GameLogEntry,
 } from "./gameLog";
 
 const player = { id: "player", kind: "player", displayName: "Jimbo" } as const;
@@ -17,6 +20,10 @@ const dummy = {
   kind: "test-dummy",
   displayName: "Muñeco de pruebas",
 } as const;
+
+function getDamageAmount(entry: GameLogEntry | undefined): number | undefined {
+  return entry?.type === "damage" ? entry.appliedDamage : undefined;
+}
 
 describe("game log store", () => {
   it("retains the latest 2,000 events and reports discarded history", () => {
@@ -37,8 +44,8 @@ describe("game log store", () => {
       discardedCount: 500,
       generation: 0,
     });
-    expect(store.getEntry(0)?.appliedDamage).toBe(501);
-    expect(store.getEntry(1_999)?.appliedDamage).toBe(2_500);
+    expect(getDamageAmount(store.getEntry(0))).toBe(501);
+    expect(getDamageAmount(store.getEntry(1_999))).toBe(2_500);
     expect(store.readEntries()).toHaveLength(MAX_GAME_LOG_ENTRIES);
   });
 
@@ -49,7 +56,11 @@ describe("game log store", () => {
       store.publishDamage({ receiver: dummy, source: player, appliedDamage: amount });
     }
 
-    expect(store.readEntries().map((entry) => entry.appliedDamage)).toEqual([3, 4, 5]);
+    expect(store.readEntries().map((entry) => getDamageAmount(entry))).toEqual([
+      3,
+      4,
+      5,
+    ]);
     expect(store.getEntry(-1)).toBeUndefined();
     expect(store.getEntry(3)).toBeUndefined();
   });
@@ -105,6 +116,49 @@ describe("game log store", () => {
     expect(store.getSnapshot().count).toBe(0);
   });
 
+  it("stores damage and area events together in chronological order", () => {
+    const store = createGameLogStore(4);
+
+    store.publishDamage({
+      occurredAtMs: 1,
+      receiver: dummy,
+      source: player,
+      appliedDamage: 20,
+    });
+    store.publishAreaPresence({
+      occurredAtMs: 2,
+      target: dummy,
+      status: "inside",
+      areaRadiusMeters: 10,
+    });
+    store.publishAreaPresence({
+      occurredAtMs: 3,
+      target: dummy,
+      status: "deactivated",
+      areaRadiusMeters: 10,
+    });
+
+    expect(store.readEntries().map((entry) => entry.type)).toEqual([
+      "damage",
+      "area-presence",
+      "area-presence",
+    ]);
+    expect(store.getSnapshot().publishedCount).toBe(3);
+  });
+
+  it("rejects area events with an invalid radius", () => {
+    const store = createGameLogStore();
+
+    expect(
+      store.publishAreaPresence({
+        target: dummy,
+        status: "inside",
+        areaRadiusMeters: 0,
+      }),
+    ).toBeNull();
+    expect(store.getSnapshot().count).toBe(0);
+  });
+
   it("formats local time, typed actors and decimal damage", () => {
     const occurredAtMs = new Date(2026, 0, 1, 14, 54, 30).getTime();
     const store = createGameLogStore();
@@ -126,6 +180,39 @@ describe("game log store", () => {
     );
     expect(dummyDamage && formatDamageLogMessage(dummyDamage)).toBe(
       'Muñeco de pruebas recibió 20 de daño de Jugador "Jimbo".',
+    );
+  });
+
+  it("formats inside, outside and deactivated area states", () => {
+    const occurredAtMs = new Date(2026, 0, 1, 14, 54, 30).getTime();
+    const store = createGameLogStore();
+    const inside = store.publishAreaPresence({
+      occurredAtMs,
+      target: dummy,
+      status: "inside",
+      areaRadiusMeters: 10,
+    });
+    const outside = store.publishAreaPresence({
+      occurredAtMs,
+      target: dummy,
+      status: "outside",
+      areaRadiusMeters: 10,
+    });
+    const deactivated = store.publishAreaPresence({
+      occurredAtMs,
+      target: dummy,
+      status: "deactivated",
+      areaRadiusMeters: 10,
+    });
+
+    expect(inside && formatAreaPresenceLogMessage(inside)).toBe(
+      "Muñeco de pruebas está DENTRO del área de 10 m.",
+    );
+    expect(outside && formatGameLogEntry(outside)).toBe(
+      "14:54:30 ÁREA · Muñeco de pruebas está FUERA del área de 10 m.",
+    );
+    expect(deactivated && formatAreaPresenceLogMessage(deactivated)).toBe(
+      "Área de 10 m desactivada.",
     );
   });
 });

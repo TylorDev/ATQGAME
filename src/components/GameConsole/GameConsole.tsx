@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
@@ -17,11 +18,12 @@ import {
   useHasGameLogEntries,
 } from "@/contexts/GameLogContext";
 import {
-  formatDamageLogEntry,
-  formatDamageLogMessage,
+  formatGameLogEntry,
+  formatGameLogMessage,
   formatLogTime,
+  getGameLogKindLabel,
   MAX_GAME_LOG_ENTRIES,
-  type DamageLogEntry,
+  type GameLogEntry,
 } from "@/game/gameLog";
 import {
   createFrozenGameLogView,
@@ -33,6 +35,7 @@ import {
   ConsoleGestureController,
   type ConsoleFrameScheduler,
 } from "@/game/consoleInteraction";
+import { parseGameConsoleCommand } from "@/game/consoleCommand";
 import { GAME_CONSOLE_KEYBINDING } from "@/game/keybindings";
 import {
   loadConsoleWindowState,
@@ -110,20 +113,20 @@ function applyCommittedWindowState(
   element.style.willChange = "";
 }
 
-interface DamageLogRowProps {
-  entry: DamageLogEntry;
+interface GameLogRowProps {
+  entry: GameLogEntry;
   index: number;
   measureElement: (element: HTMLLIElement | null) => void;
 }
 
-const DamageLogRow = memo(function DamageLogRow({
+const GameLogRow = memo(function GameLogRow({
   entry,
   index,
   measureElement,
-}: DamageLogRowProps) {
+}: GameLogRowProps) {
   return (
     <li
-      aria-label={formatDamageLogEntry(entry)}
+      aria-label={formatGameLogEntry(entry)}
       className={styles.entry}
       data-index={index}
       ref={measureElement}
@@ -134,8 +137,8 @@ const DamageLogRow = memo(function DamageLogRow({
       >
         {formatLogTime(entry.occurredAtMs)}
       </time>
-      <span className={styles.kind}>Daño</span>
-      <span className={styles.message}>{formatDamageLogMessage(entry)}</span>
+      <span className={styles.kind}>{getGameLogKindLabel(entry)}</span>
+      <span className={styles.message}>{formatGameLogMessage(entry)}</span>
     </li>
   );
 });
@@ -216,6 +219,74 @@ const GameConsoleHeader = memo(function GameConsoleHeader({
   );
 });
 
+interface GameConsoleCommandLineProps {
+  fpsVisible: boolean;
+  onFpsVisibilityChange: (visible: boolean) => void;
+}
+
+const GameConsoleCommandLine = memo(function GameConsoleCommandLine({
+  fpsVisible,
+  onFpsVisibilityChange,
+}: GameConsoleCommandLineProps) {
+  const [commandText, setCommandText] = useState("");
+  const [feedback, setFeedback] = useState("Comando disponible: /fps");
+  const [hasError, setHasError] = useState(false);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    const command = parseGameConsoleCommand(commandText);
+
+    if (command.type === "empty") {
+      return;
+    }
+
+    setCommandText("");
+
+    if (command.type === "toggle-fps") {
+      const nextVisible = !fpsVisible;
+      onFpsVisibilityChange(nextVisible);
+      setHasError(false);
+      setFeedback(
+        `Contador FPS ${nextVisible ? "activado" : "desactivado"}.`,
+      );
+      return;
+    }
+
+    setHasError(true);
+    setFeedback(`Comando no reconocido: ${command.input}`);
+  };
+
+  return (
+    <footer className={styles.commandArea}>
+      <form className={styles.commandForm} onSubmit={handleSubmit}>
+        <label className={styles.commandPrompt} htmlFor="game-console-command">
+          &gt;
+        </label>
+        <input
+          aria-label="Comando de consola"
+          autoCapitalize="none"
+          autoComplete="off"
+          className={styles.commandInput}
+          id="game-console-command"
+          onChange={(event) => setCommandText(event.target.value)}
+          placeholder="/fps"
+          spellCheck={false}
+          value={commandText}
+        />
+        <button className={styles.commandSubmit} type="submit">
+          Ejecutar
+        </button>
+      </form>
+      <p
+        aria-live="polite"
+        className={hasError ? styles.commandError : styles.commandFeedback}
+      >
+        {feedback}
+      </p>
+    </footer>
+  );
+});
+
 const GameConsoleFeed = memo(function GameConsoleFeed() {
   const latestSnapshot = useGameLogSnapshot();
   const { getEntry: getLatestEntry, readEntries } = useGameLogReader();
@@ -232,7 +303,7 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
     : latestSnapshot.count;
 
   const getViewEntry = useCallback(
-    (index: number): DamageLogEntry | undefined =>
+    (index: number): GameLogEntry | undefined =>
       useFrozenView ? frozenView.entries[index] : getLatestEntry(index),
     [frozenView, getLatestEntry, useFrozenView],
   );
@@ -252,20 +323,22 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
     paddingEnd: 8,
     directDomUpdates: true,
     directDomUpdatesMode: "transform",
+    useFlushSync: false,
     useAnimationFrameWithResizeObserver: true,
     anchorTo: "end",
     followOnAppend: isFollowing ? "instant" : false,
   });
 
-  const scheduleAutomaticScrollReset = (): void => {
+  const scheduleAutomaticScrollToEnd = useCallback((): void => {
     if (automaticScrollFrameRef.current !== null) {
       cancelAnimationFrame(automaticScrollFrameRef.current);
     }
 
     automaticScrollFrameRef.current = requestAnimationFrame(() => {
       automaticScrollFrameRef.current = null;
+      rowVirtualizer.scrollToEnd();
     });
-  };
+  }, [rowVirtualizer]);
 
   const scrollToLatest = useCallback((): void => {
     isFollowingRef.current = true;
@@ -273,10 +346,9 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
     setFrozenView(null);
 
     if (latestSnapshot.count > 0) {
-      scheduleAutomaticScrollReset();
-      rowVirtualizer.scrollToEnd();
+      scheduleAutomaticScrollToEnd();
     }
-  }, [latestSnapshot.count, rowVirtualizer]);
+  }, [latestSnapshot.count, scheduleAutomaticScrollToEnd]);
 
   useLayoutEffect(() => {
     if (frozenView && !frozenViewIsCurrent) {
@@ -286,15 +358,14 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
     }
 
     if (isFollowingRef.current && latestSnapshot.count > 0) {
-      scheduleAutomaticScrollReset();
-      rowVirtualizer.scrollToEnd();
+      scheduleAutomaticScrollToEnd();
     }
   }, [
     frozenView,
     frozenViewIsCurrent,
     latestSnapshot.count,
     latestSnapshot.revision,
-    rowVirtualizer,
+    scheduleAutomaticScrollToEnd,
   ]);
 
   useEffect(() => {
@@ -353,7 +424,7 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
         {viewCount === 0 ? (
           <div className={styles.empty}>
             <span className={styles.emptyCode}>SIN EVENTOS</span>
-            <p>El daño de cualquier actor del mapa aparecerá aquí.</p>
+            <p>Los eventos de daño y área del mapa aparecerán aquí.</p>
           </div>
         ) : (
           <ol className={styles.list} ref={rowVirtualizer.containerRef}>
@@ -361,7 +432,7 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
               const entry = getViewEntry(virtualRow.index);
 
               return entry ? (
-                <DamageLogRow
+                <GameLogRow
                   entry={entry}
                   index={virtualRow.index}
                   key={entry.id}
@@ -386,12 +457,16 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
 function GameConsoleWindow({
   state,
   windowRef,
+  fpsVisible,
+  onFpsVisibilityChange,
   onHide,
   onMoveStart,
   onResizeStart,
 }: {
   state: ConsoleWindowState;
   windowRef: RefObject<HTMLElement | null>;
+  fpsVisible: boolean;
+  onFpsVisibilityChange: (visible: boolean) => void;
   onHide: () => void;
   onMoveStart: (event: ReactPointerEvent<HTMLElement>) => void;
   onResizeStart: (
@@ -413,6 +488,10 @@ function GameConsoleWindow({
     >
       <GameConsoleHeader onHide={onHide} onMoveStart={onMoveStart} />
       <GameConsoleFeed />
+      <GameConsoleCommandLine
+        fpsVisible={fpsVisible}
+        onFpsVisibilityChange={onFpsVisibilityChange}
+      />
 
       {resizeDirections.map((direction) => (
         <div
@@ -426,7 +505,15 @@ function GameConsoleWindow({
   );
 }
 
-export function GameConsole() {
+interface GameConsoleProps {
+  fpsVisible: boolean;
+  onFpsVisibilityChange: (visible: boolean) => void;
+}
+
+export function GameConsole({
+  fpsVisible,
+  onFpsVisibilityChange,
+}: GameConsoleProps) {
   const [windowState, setWindowState] =
     useState<ConsoleWindowState>(getInitialWindowState);
   const windowStateRef = useRef(windowState);
@@ -614,6 +701,8 @@ export function GameConsole() {
     <GameConsoleWindow
       state={windowState}
       windowRef={windowRef}
+      fpsVisible={fpsVisible}
+      onFpsVisibilityChange={onFpsVisibilityChange}
       onHide={hideConsole}
       onMoveStart={handleMoveStart}
       onResizeStart={handleResizeStart}

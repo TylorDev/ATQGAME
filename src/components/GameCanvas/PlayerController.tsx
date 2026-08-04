@@ -6,13 +6,17 @@ import {
   type RefObject,
 } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { usePublishDamageLog } from "@/contexts/GameLogContext";
+import {
+  usePublishAreaPresenceLog,
+  usePublishDamageLog,
+} from "@/contexts/GameLogContext";
 import {
   type OverheadStatusRegistration,
   type OverheadStatusUpdate,
   OverheadStatusRegistry,
 } from "@/components/OverheadStatus/OverheadStatusSystem";
 import type { PerformanceLoadScenarioHandle } from "@/components/PerformanceLoadScenario/PerformanceLoadScenario";
+import { PlayerArea } from "@/components/PlayerArea/PlayerArea";
 import type { TestDummyHandle } from "@/components/TestDummy/TestDummy";
 import {
   BufferAttribute,
@@ -39,7 +43,11 @@ import {
   UI_PUBLISH_INTERVAL_MS,
   type GameEvent,
 } from "@/game/GameSimulation";
-import { isEditableEventTarget } from "@/game/keybindings";
+import {
+  isEditableEventTarget,
+  PLAYER_AREA_KEYBINDING,
+  SPEED_BOOST_KEYBINDING,
+} from "@/game/keybindings";
 import type { PlayerDebugStats } from "@/game/playerStats";
 import { PerformanceBenchmark } from "@/game/performanceBenchmark";
 import { resolvePointerFacingYaw } from "@/game/playerOrientation";
@@ -63,6 +71,11 @@ const cameraTarget = new Vector3();
 const desiredCameraPosition = new Vector3();
 const interpolatedPlayerPosition = { x: 0, z: 0 };
 const PLAYER_OVERHEAD_Y = 2.38;
+
+type DeferredGameLogEvent = Extract<
+  GameEvent,
+  { type: "damage" } | { type: "area-presence" }
+>;
 
 interface PerformanceWithMemory extends Performance {
   memory?: {
@@ -135,7 +148,11 @@ export function PlayerController({
   onCameraDistanceChange,
 }: PlayerControllerProps) {
   const groupRef = useRef<Group>(null);
+  const playerAreaRef = useRef<Mesh>(null);
+  const publishAreaPresence = usePublishAreaPresenceLog();
   const publishDamage = usePublishDamageLog();
+  const deferredGameLogEventsRef = useRef<DeferredGameLogEvent[]>([]);
+  const gameLogFlushScheduledRef = useRef(false);
   const pathLineRef = useRef<LineSegments>(null);
   const pathGeometryRef = useRef<BufferGeometry>(null);
   const selectedPathLineRef = useRef<LineSegments>(null);
@@ -419,25 +436,70 @@ export function PlayerController({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (
-        event.code !== "KeyF" ||
-        event.repeat ||
-        isEditableEventTarget(event.target)
-      ) {
+      if (event.repeat || isEditableEventTarget(event.target)) {
         return;
       }
 
-      simulation.enqueueCommand({ type: "activate-speed-boost" });
+      if (event.code === SPEED_BOOST_KEYBINDING.code) {
+        simulation.enqueueCommand({ type: "activate-speed-boost" });
+        return;
+      }
+
+      if (event.code === PLAYER_AREA_KEYBINDING.code) {
+        simulation.enqueueCommand({ type: "toggle-player-area" });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [simulation]);
 
+  const deferGameLogEvent = useCallback(
+    (event: DeferredGameLogEvent): void => {
+      deferredGameLogEventsRef.current.push(event);
+
+      if (gameLogFlushScheduledRef.current) {
+        return;
+      }
+
+      gameLogFlushScheduledRef.current = true;
+      queueMicrotask(() => {
+        gameLogFlushScheduledRef.current = false;
+        const pendingEvents = deferredGameLogEventsRef.current;
+
+        for (let index = 0; index < pendingEvents.length; index += 1) {
+          const pendingEvent = pendingEvents[index];
+
+          if (pendingEvent.type === "damage") {
+            publishDamage(pendingEvent.payload);
+          } else {
+            publishAreaPresence(pendingEvent.payload);
+          }
+        }
+
+        pendingEvents.length = 0;
+      });
+    },
+    [publishAreaPresence, publishDamage],
+  );
+
   const visitEvent = useCallback(
     (event: GameEvent): void => {
       if (event.type === "damage") {
-        publishDamage(event.payload);
+        deferGameLogEvent(event);
+        return;
+      }
+
+      if (event.type === "area-presence") {
+        deferGameLogEvent(event);
+        return;
+      }
+
+      if (event.type === "vitality-change") {
+        overheadRegistry.pushHealthSignal(
+          event.receiverId,
+          event.healthDelta,
+        );
         return;
       }
 
@@ -451,7 +513,12 @@ export function PlayerController({
         onTestDummyHudChange(null);
       }
     },
-    [onTargetSelectionChange, onTestDummyHudChange, publishDamage],
+    [
+      deferGameLogEvent,
+      onTargetSelectionChange,
+      onTestDummyHudChange,
+      overheadRegistry,
+    ],
   );
 
   useFrame((frameState, delta) => {
@@ -478,6 +545,11 @@ export function PlayerController({
 
     const interpolationAlpha = simulation.advanceFrame(delta);
     const state = simulation.getRenderState();
+
+    if (playerAreaRef.current) {
+      playerAreaRef.current.visible = state.playerAreaActive;
+    }
+
     interpolatedPlayerPosition.x =
       state.previousPlayerPosition.x +
       (state.currentPlayerPosition.x - state.previousPlayerPosition.x) *
@@ -541,6 +613,7 @@ export function PlayerController({
 
     simulation.drainEvents(visitEvent);
     const timestampMs = performance.now();
+    overheadRegistry.expireHealthSignals(timestampMs);
     const criticalUiChange = simulation.consumeCriticalUiDirty();
     if (uiPublishGate.shouldPublish(timestampMs, criticalUiChange)) {
       const mask = debugVisible
@@ -654,6 +727,8 @@ export function PlayerController({
   return (
     <>
       <group ref={groupRef} position={[0, 0.9, 0]}>
+        <PlayerArea ref={playerAreaRef} />
+
         <mesh castShadow>
           <capsuleGeometry args={[0.45, 0.9, 8, 16]} />
           <meshStandardMaterial

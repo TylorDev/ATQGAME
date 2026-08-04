@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { DebugPanel } from "@/components/DebugPanel/DebugPanel";
+import { FpsCounter } from "@/components/FpsCounter/FpsCounter";
 import { GameCanvas } from "@/components/GameCanvas/GameCanvas";
 import { GameConsole } from "@/components/GameConsole/GameConsole";
 import { PlayerHud } from "@/components/PlayerHud/PlayerHud";
@@ -17,8 +18,13 @@ import { DEFAULT_PLAYER_COMBAT_SETTINGS } from "@/game/combat";
 import {
   CLOSE_OVERLAYS_KEYBINDING,
   isEditableEventTarget,
+  PLAYER_HUD_KEYBINDING,
   PLAYER_STATS_KEYBINDING,
 } from "@/game/keybindings";
+import {
+  loadFpsVisibility,
+  saveFpsVisibility,
+} from "@/game/fpsDisplay";
 import {
   getDefaultGraphicsQualitySettings,
   loadGraphicsQualitySettings,
@@ -67,8 +73,14 @@ function getInitialGraphicsQualitySettings(): GraphicsQualitySettings {
   }
 }
 
+function getInitialFpsVisibility(): boolean {
+  return loadFpsVisibility(window.localStorage);
+}
+
 export function Home() {
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [fpsVisible, setFpsVisible] = useState(getInitialFpsVisibility);
+  const [isPlayerHudVisible, setIsPlayerHudVisible] = useState(true);
   const [cameraSettings, setCameraSettings] =
     useState<CameraSettings>(getInitialCameraSettings);
   const [playerDebugStats, setPlayerDebugStats] = useState(
@@ -135,6 +147,10 @@ export function Home() {
         setIsSettingsOpen(false);
         return;
       }
+
+      if (event.code === PLAYER_HUD_KEYBINDING.code) {
+        setIsPlayerHudVisible((isVisible) => !isVisible);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -143,6 +159,10 @@ export function Home() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [closeOverlays]);
+
+  useEffect(() => {
+    saveFpsVisibility(window.localStorage, fpsVisible);
+  }, [fpsVisible]);
 
   useEffect(() => {
     try {
@@ -169,6 +189,10 @@ export function Home() {
 
   const handlePlayerNameChange = useCallback((displayName: string): void => {
     setPlayerName((currentName) => normalizePlayerName(displayName, currentName));
+  }, []);
+
+  const hidePlayerHud = useCallback((): void => {
+    setIsPlayerHudVisible(false);
   }, []);
 
   return (
@@ -205,9 +229,16 @@ export function Home() {
         state={playerHudState}
         testDummy={testDummyHudState}
         blurEnabled={resolvedGraphicsQuality.hudBlur}
+        visible={isPlayerHudVisible}
+        onHide={hidePlayerHud}
       />
 
-      <GameConsole />
+      <GameConsole
+        fpsVisible={fpsVisible}
+        onFpsVisibilityChange={setFpsVisible}
+      />
+
+      {fpsVisible ? <FpsCounter /> : null}
 
       <button
         aria-controls="settings-panel"

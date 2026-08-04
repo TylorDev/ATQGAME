@@ -1,0 +1,27 @@
+.counter {
+  position: absolute;
+  right: $spacing-5;
+  bottom: $spacing-4;
+  z-index: $z-index-overlay;
+  min-width: 5.75rem;
+  padding: $spacing-2 $spacing-3;
+  color: $color-success;
+  font-family: $font-family-utility;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  text-align: center;
+  background: $color-overlay;
+  border: $border-width-default solid rgb(99 194 180 / 32%);
+  border-radius: $border-radius-sm;
+  box-shadow: $shadow-sm;
+  pointer-events: none;
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .counter {
+    right: $spacing-3;
+    bottom: $spacing-3;
+  }
+}

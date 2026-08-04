@@ -22,6 +22,37 @@
   background: rgb(16 23 34 / 96%);
 }
 
+.hudHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-3;
+}
+
+.hide {
+  padding: $spacing-1 $spacing-2;
+  color: $color-text-secondary;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+  background: transparent;
+  border: $border-width-default solid $border-color-default;
+  border-radius: $border-radius-sm;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    color $transition-fast,
+    background-color $transition-fast,
+    border-color $transition-fast;
+}
+
+.hide:hover,
+.hide:focus-visible {
+  color: $color-background;
+  background: $color-primary;
+  border-color: $color-primary;
+  outline: none;
+}
+
 .eyebrow,
 .effectsHeader,
 .healthHeader,
@@ -294,5 +325,11 @@
 @media (max-width: $breakpoint-tablet) and (min-width: #{$breakpoint-mobile + 1}) {
   .hud {
     width: min(17rem, calc(100vw - #{$spacing-6}));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hide {
+    transition: none;
   }
 }

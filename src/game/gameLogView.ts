@@ -1,7 +1,7 @@
-import type { DamageLogEntry, GameLogSnapshot } from "./gameLog";
+import type { GameLogEntry, GameLogSnapshot } from "./gameLog";
 
 export interface FrozenGameLogView {
-  entries: readonly DamageLogEntry[];
+  entries: readonly GameLogEntry[];
   publishedCount: number;
   discardedCount: number;
   generation: number;
@@ -9,7 +9,7 @@ export interface FrozenGameLogView {
 
 export function createFrozenGameLogView(
   snapshot: GameLogSnapshot,
-  entries: readonly DamageLogEntry[],
+  entries: readonly GameLogEntry[],
 ): FrozenGameLogView {
   return {
     entries,

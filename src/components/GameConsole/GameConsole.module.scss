@@ -2,7 +2,7 @@
   position: absolute;
   z-index: $z-index-console;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   color: $color-text-primary;
   background: $color-console-background;
@@ -283,6 +283,81 @@
   outline-offset: 2px;
 }
 
+.commandArea {
+  display: grid;
+  gap: $spacing-1;
+  padding: $spacing-2 $spacing-3;
+  background: $color-console-header;
+  border-top: $border-width-default solid $color-console-border;
+  font-family: $font-family-utility;
+}
+
+.commandForm {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: $spacing-2;
+}
+
+.commandPrompt {
+  color: $color-secondary;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+}
+
+.commandInput {
+  min-width: 0;
+  height: 2rem;
+  padding: 0 $spacing-2;
+  color: $color-text-primary;
+  background: rgb(255 255 255 / 4%);
+  border: $border-width-default solid $border-color-default;
+  border-radius: $border-radius-sm;
+  font: inherit;
+}
+
+.commandInput::placeholder {
+  color: $color-text-disabled;
+}
+
+.commandInput:focus-visible {
+  border-color: $color-secondary;
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(99 194 180 / 16%);
+}
+
+.commandSubmit {
+  height: 2rem;
+  padding: 0 $spacing-3;
+  color: $color-background;
+  background: $color-secondary;
+  border: 0;
+  border-radius: $border-radius-sm;
+  cursor: pointer;
+  font: inherit;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+}
+
+.commandSubmit:hover,
+.commandSubmit:focus-visible {
+  background: $color-primary-hover;
+  outline: none;
+}
+
+.commandFeedback,
+.commandError {
+  min-height: 0.8rem;
+  margin: 0;
+  color: $color-text-disabled;
+  font-size: 0.6rem;
+  line-height: $line-height-sm;
+}
+
+.commandError {
+  color: $color-error;
+}
+
 .handle {
   position: absolute;
   z-index: 3;
@@ -359,6 +434,10 @@
   .action,
   .confirm,
   .hide {
+    transition: none;
+  }
+
+  .commandSubmit {
     transition: none;
   }
 }

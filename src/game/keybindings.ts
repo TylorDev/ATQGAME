@@ -28,6 +28,14 @@ export const SPEED_BOOST_KEYBINDING: Readonly<GameKeybinding> = {
   description: "Aumenta la velocidad ×1,8 durante 5 s. Cooldown: 15 s.",
 };
 
+export const PLAYER_AREA_KEYBINDING: Readonly<GameKeybinding> = {
+  id: "player-area",
+  input: "Q",
+  code: "KeyQ",
+  label: "Área de alcance",
+  description: "Muestra u oculta el área circular de 10 m del jugador.",
+};
+
 export const CAMERA_ZOOM_KEYBINDING: Readonly<GameKeybinding> = {
   id: "camera-zoom",
   input: "Rueda",
@@ -41,6 +49,14 @@ export const PLAYER_STATS_KEYBINDING: Readonly<GameKeybinding> = {
   code: "KeyI",
   label: "Stats del jugador",
   description: "Abre o cierra el panel de estadísticas del personaje.",
+};
+
+export const PLAYER_HUD_KEYBINDING: Readonly<GameKeybinding> = {
+  id: "player-hud",
+  input: "H",
+  code: "KeyH",
+  label: "Detalles del jugador",
+  description: "Muestra u oculta los detalles del jugador y del objetivo.",
 };
 
 export const GAME_CONSOLE_KEYBINDING: Readonly<GameKeybinding> = {
@@ -63,6 +79,8 @@ export const HUD_KEYBINDINGS = [
   SELECT_TARGET_KEYBINDING,
   MOVE_OR_PAUSE_KEYBINDING,
   SPEED_BOOST_KEYBINDING,
+  PLAYER_AREA_KEYBINDING,
+  PLAYER_HUD_KEYBINDING,
 ] as const;
 
 export const GAME_KEYBINDINGS = [

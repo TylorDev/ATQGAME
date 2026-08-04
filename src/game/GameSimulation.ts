@@ -20,6 +20,10 @@ import {
   type PlayerDebugStats,
 } from "./playerStats";
 import { getEffectTimerProgress } from "./overheadStatus";
+import {
+  PLAYER_AREA_RADIUS_METERS,
+  playerAreaTouchesTarget,
+} from "./playerArea";
 import { ObstacleSpatialIndex } from "./SpatialHash2D";
 import {
   AutoAttackController,
@@ -28,6 +32,7 @@ import {
   type TestDummyStateView,
 } from "./testDummy";
 import type {
+  PublishAreaPresenceLogInput,
   PublishDamageLogInput,
 } from "./gameLog";
 import type {
@@ -60,6 +65,7 @@ export type GameCommand =
   | { type: "end-right-press"; timestampMs: number }
   | { type: "cancel-input" }
   | { type: "activate-speed-boost" }
+  | { type: "toggle-player-area" }
   | { type: "activate-target" }
   | { type: "set-target-pursuit"; active: boolean }
   | { type: "deselect-target" }
@@ -68,6 +74,8 @@ export type GameCommand =
 
 export type GameEvent =
   | { type: "damage"; payload: PublishDamageLogInput }
+  | { type: "area-presence"; payload: PublishAreaPresenceLogInput }
+  | { type: "vitality-change"; receiverId: string; healthDelta: number }
   | { type: "target-selected" }
   | { type: "target-deselected" }
   | { type: "critical-ui-change" };
@@ -88,6 +96,7 @@ export interface GameRenderState {
   readonly playerEffects: readonly ActiveEffect[];
   readonly testDummy: TestDummyStateView;
   readonly performanceLoad: PerformanceLoadState | null;
+  playerAreaActive: boolean;
   targetSelected: boolean;
   targetPursuitActive: boolean;
   simulationTimeMs: number;
@@ -183,6 +192,7 @@ export class GameSimulation {
   private readonly wallClockOffsetMs: number;
   private targetSelected = false;
   private targetPursuitActive = false;
+  private playerAreaActive = false;
   private playerName: string;
   private deathNoticeUntilMs = 0;
   private previousEffectsMask = 0;
@@ -208,6 +218,7 @@ export class GameSimulation {
       playerEffects: this.playerEffects,
       testDummy: this.testDummy.getState(this.simulationTimeMs),
       performanceLoad: this.performanceLoad,
+      playerAreaActive: false,
       targetSelected: false,
       targetPursuitActive: false,
       simulationTimeMs: this.simulationTimeMs,
@@ -321,6 +332,7 @@ export class GameSimulation {
     );
     const movementAfter = this.movement.getState();
     copyPoint(this.currentPlayerPosition, movementAfter.position);
+    this.publishPlayerAreaPresence(movementAfter.position);
 
     if (this.targetSelected) {
       const targetDistance = Math.hypot(
@@ -339,6 +351,11 @@ export class GameSimulation {
     );
 
     if (didRespawn) {
+      this.events.push({
+        type: "vitality-change",
+        receiverId: TEST_DUMMY.id,
+        healthDelta: TEST_DUMMY.maximumHealth,
+      });
       this.markCriticalUiChange();
     }
 
@@ -354,6 +371,13 @@ export class GameSimulation {
         this.autoAttack.getDamagePerAttack(),
         this.simulationTimeMs,
       );
+
+      this.events.push({
+        type: "vitality-change",
+        receiverId: TEST_DUMMY.id,
+        healthDelta:
+          result.appliedDamage > 0 ? -result.appliedDamage : 0,
+      });
 
       if (result.appliedDamage > 0) {
         this.events.push({
@@ -394,6 +418,13 @@ export class GameSimulation {
     for (let tick = 0; tick < hazard.damageTicks; tick += 1) {
       const result = this.vitality.applyDamage(BURNING_TILE.damagePerTick);
 
+      this.events.push({
+        type: "vitality-change",
+        receiverId: "local-player",
+        healthDelta:
+          result.appliedDamage > 0 ? -result.appliedDamage : 0,
+      });
+
       if (result.appliedDamage > 0) {
         this.events.push({
           type: "damage",
@@ -415,6 +446,11 @@ export class GameSimulation {
       }
 
       if (result.didDie) {
+        this.events.push({
+          type: "vitality-change",
+          receiverId: "local-player",
+          healthDelta: result.snapshot.currentHealth,
+        });
         this.deathNoticeUntilMs =
           this.simulationTimeMs + DEATH_NOTICE_DURATION_MS;
         this.markCriticalUiChange();
@@ -423,6 +459,7 @@ export class GameSimulation {
 
     this.syncEffects(hazard.isActive);
     this.updatePerformanceLoad();
+    this.renderState.playerAreaActive = this.playerAreaActive;
     this.renderState.targetSelected = this.targetSelected;
     this.renderState.targetPursuitActive = this.targetPursuitActive;
     this.renderState.simulationTimeMs = this.simulationTimeMs;
@@ -448,6 +485,25 @@ export class GameSimulation {
           break;
         case "activate-speed-boost":
           this.speedBoost.activate(this.simulationTimeMs);
+          break;
+        case "toggle-player-area":
+          this.playerAreaActive = !this.playerAreaActive;
+
+          if (!this.playerAreaActive) {
+            this.events.push({
+              type: "area-presence",
+              payload: {
+                occurredAtMs: this.wallClockOffsetMs + this.simulationTimeMs,
+                target: {
+                  id: TEST_DUMMY.id,
+                  kind: "test-dummy",
+                  displayName: TEST_DUMMY.displayName,
+                },
+                status: "deactivated",
+                areaRadiusMeters: PLAYER_AREA_RADIUS_METERS,
+              },
+            });
+          }
           break;
         case "activate-target":
           this.activateTarget();
@@ -490,6 +546,32 @@ export class GameSimulation {
     }
 
     this.markCriticalUiChange();
+  }
+
+  private publishPlayerAreaPresence(playerPosition: GroundPoint): void {
+    if (!this.playerAreaActive) {
+      return;
+    }
+
+    const isInside = playerAreaTouchesTarget(
+      playerPosition,
+      this.targetPosition,
+      TEST_DUMMY.footprintRadiusMeters,
+    );
+
+    this.events.push({
+      type: "area-presence",
+      payload: {
+        occurredAtMs: this.wallClockOffsetMs + this.simulationTimeMs,
+        target: {
+          id: TEST_DUMMY.id,
+          kind: "test-dummy",
+          displayName: TEST_DUMMY.displayName,
+        },
+        status: isInside ? "inside" : "outside",
+        areaRadiusMeters: PLAYER_AREA_RADIUS_METERS,
+      },
+    });
   }
 
   private setTargetPursuit(active: boolean): void {

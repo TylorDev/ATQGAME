@@ -20,6 +20,7 @@ npm test
 - Clic derecho sostenido: avanza continuamente y sigue la dirección del puntero.
 - `F`: activa un impulso inmediato de velocidad ×1,8 durante 5 s; su cooldown
   comienza al activarlo y dura 15 s.
+- `Q`: muestra u oculta un área circular de 10 m alrededor del jugador.
 - `F10`: muestra u oculta la consola global del mapa.
 - La alfombra roja incandescente aplica **Ardiendo** mientras el jugador la pisa.
   Tras 2 s dentro, inflige daño cada 2 s y se elimina inmediatamente al salir.
@@ -43,7 +44,10 @@ Los logs del renderer aparecen en la terminal de desarrollo con el prefijo
 ## Consola del mapa
 
 La consola interna registra el daño efectivo de todos los actores de la instancia
-local del mapa. Puede moverse desde el encabezado, redimensionarse desde cualquier
+local del mapa y el estado continuo del muñeco respecto al área activada con `Q`.
+La detección cuenta cualquier contacto con la huella física de 0,72 m del muñeco,
+por lo que el límite inclusivo entre centros es de 10,72 m. Puede moverse desde el
+encabezado, redimensionarse desde cualquier
 borde o esquina y recuerda su geometría y visibilidad entre ejecuciones. El
 historial permanece únicamente durante la sesión, conserva los últimos 2.000
 eventos y muestra cuántos registros antiguos fueron descartados. La lista se

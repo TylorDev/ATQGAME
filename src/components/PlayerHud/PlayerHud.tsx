@@ -6,13 +6,21 @@ interface PlayerHudProps {
   state: PlayerHudState;
   testDummy: TestDummySnapshot | null;
   blurEnabled: boolean;
+  visible: boolean;
+  onHide: () => void;
 }
 
 function formatHealth(health: number): string {
   return Math.round(health).toLocaleString("es-ES");
 }
 
-export function PlayerHud({ state, testDummy, blurEnabled }: PlayerHudProps) {
+export function PlayerHud({
+  state,
+  testDummy,
+  blurEnabled,
+  visible,
+  onHide,
+}: PlayerHudProps) {
   const healthPercent =
     state.maximumHealth > 0
       ? Math.min((state.currentHealth / state.maximumHealth) * 100, 100)
@@ -26,11 +34,24 @@ export function PlayerHud({ state, testDummy, blurEnabled }: PlayerHudProps) {
 
   return (
     <>
-      <aside
-        className={`${styles.hud} ${blurEnabled ? styles.blurred : styles.solid}`}
-        aria-label="Estado del jugador"
-      >
-        <div className={styles.eyebrow}>Arena / Prueba 01</div>
+      {visible ? (
+        <aside
+          className={`${styles.hud} ${blurEnabled ? styles.blurred : styles.solid}`}
+          aria-label="Estado del jugador"
+        >
+          <div className={styles.hudHeader}>
+            <div className={styles.eyebrow}>Arena / Prueba 01</div>
+            <button
+              aria-keyshortcuts="H"
+              aria-label="Ocultar detalles del jugador y del muñeco"
+              className={styles.hide}
+              onClick={onHide}
+              title="Ocultar detalles · H"
+              type="button"
+            >
+              Ocultar
+            </button>
+          </div>
         <p className={styles.title}>Jugador</p>
 
         <div className={styles.healthHeader}>
@@ -136,7 +157,8 @@ export function PlayerHud({ state, testDummy, blurEnabled }: PlayerHudProps) {
             <span>{binding.description}</span>
           </p>
         ))}
-      </aside>
+        </aside>
+      ) : null}
 
       {state.isDeathNoticeVisible ? (
         <div className={styles.deathNotice} role="status" aria-live="polite">

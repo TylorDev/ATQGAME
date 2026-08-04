@@ -26,7 +26,11 @@ describe("frozen game log views", () => {
     store.publishDamage({ receiver: player, source: carpet, appliedDamage: 30 });
     store.publishDamage({ receiver: player, source: carpet, appliedDamage: 40 });
 
-    expect(frozen.entries.map((entry) => entry.appliedDamage)).toEqual([10, 20]);
+    expect(
+      frozen.entries.map((entry) =>
+        entry.type === "damage" ? entry.appliedDamage : null,
+      ),
+    ).toEqual([10, 20]);
     expect(getFrozenViewNewEntryCount(store.getSnapshot(), frozen)).toBe(2);
     expect(isFrozenViewCurrent(store.getSnapshot(), frozen)).toBe(true);
   });

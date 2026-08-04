@@ -42,6 +42,7 @@ export const TEST_DUMMY: Readonly<TestDummyDefinition> = {
   displayName: "Muñeco de pruebas",
   xMeters: 4,
   zMeters: 2,
+  footprintRadiusMeters: 0.72,
   maximumHealth: 10_000,
 };
 

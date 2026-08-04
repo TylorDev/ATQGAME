@@ -26,6 +26,26 @@ export interface PublishDamageLogInput {
   appliedDamage: number;
 }
 
+export type AreaPresenceStatus = "inside" | "outside" | "deactivated";
+
+export interface AreaPresenceLogEntry {
+  id: string;
+  type: "area-presence";
+  occurredAtMs: number;
+  target: DamageLogActor;
+  status: AreaPresenceStatus;
+  areaRadiusMeters: number;
+}
+
+export interface PublishAreaPresenceLogInput {
+  occurredAtMs?: number;
+  target: DamageLogActor;
+  status: AreaPresenceStatus;
+  areaRadiusMeters: number;
+}
+
+export type GameLogEntry = DamageLogEntry | AreaPresenceLogEntry;
+
 export interface GameLogSnapshot {
   revision: number;
   count: number;
@@ -37,10 +57,13 @@ export interface GameLogSnapshot {
 export interface GameLogStore {
   getSnapshot: () => GameLogSnapshot;
   getHasEntriesSnapshot: () => boolean;
-  getEntry: (index: number) => DamageLogEntry | undefined;
-  readEntries: () => readonly DamageLogEntry[];
+  getEntry: (index: number) => GameLogEntry | undefined;
+  readEntries: () => readonly GameLogEntry[];
   subscribe: (listener: () => void) => () => void;
   publishDamage: (input: PublishDamageLogInput) => DamageLogEntry | null;
+  publishAreaPresence: (
+    input: PublishAreaPresenceLogInput,
+  ) => AreaPresenceLogEntry | null;
   clear: () => void;
 }
 
@@ -53,6 +76,10 @@ const actorKindLabels: Record<Exclude<DamageLogActorKind, "test-dummy">, string>
 };
 
 const damageNumberFormatter = new Intl.NumberFormat("es-ES", {
+  maximumFractionDigits: 2,
+});
+
+const radiusNumberFormatter = new Intl.NumberFormat("es-ES", {
   maximumFractionDigits: 2,
 });
 
@@ -82,13 +109,40 @@ export function formatDamageLogEntry(entry: DamageLogEntry): string {
   return `${formatLogTime(entry.occurredAtMs)} DAÑO · ${formatDamageLogMessage(entry)}`;
 }
 
+export function formatAreaPresenceLogMessage(
+  entry: AreaPresenceLogEntry,
+): string {
+  const radius = radiusNumberFormatter.format(entry.areaRadiusMeters);
+
+  if (entry.status === "deactivated") {
+    return `Área de ${radius} m desactivada.`;
+  }
+
+  const state = entry.status === "inside" ? "DENTRO" : "FUERA";
+  return `${entry.target.displayName} está ${state} del área de ${radius} m.`;
+}
+
+export function getGameLogKindLabel(entry: GameLogEntry): string {
+  return entry.type === "damage" ? "Daño" : "Área";
+}
+
+export function formatGameLogMessage(entry: GameLogEntry): string {
+  return entry.type === "damage"
+    ? formatDamageLogMessage(entry)
+    : formatAreaPresenceLogMessage(entry);
+}
+
+export function formatGameLogEntry(entry: GameLogEntry): string {
+  return `${formatLogTime(entry.occurredAtMs)} ${getGameLogKindLabel(entry).toUpperCase()} · ${formatGameLogMessage(entry)}`;
+}
+
 export function createGameLogStore(
   capacity = MAX_GAME_LOG_ENTRIES,
 ): GameLogStore {
   const normalizedCapacity = Number.isInteger(capacity) && capacity > 0
     ? capacity
     : MAX_GAME_LOG_ENTRIES;
-  const buffer = new Array<DamageLogEntry | undefined>(normalizedCapacity);
+  const buffer = new Array<GameLogEntry | undefined>(normalizedCapacity);
   let startIndex = 0;
   let size = 0;
   let nextSequence = 1;
@@ -105,6 +159,31 @@ export function createGameLogStore(
     listeners.forEach((listener) => listener());
   };
 
+  const appendEntry = <Entry extends GameLogEntry>(entry: Entry): Entry => {
+    nextSequence += 1;
+    const didDiscardOldest = size === normalizedCapacity;
+
+    if (!didDiscardOldest) {
+      buffer[(startIndex + size) % normalizedCapacity] = entry;
+      size += 1;
+    } else {
+      buffer[startIndex] = entry;
+      startIndex = (startIndex + 1) % normalizedCapacity;
+    }
+
+    snapshot = {
+      ...snapshot,
+      revision: snapshot.revision + 1,
+      count: size,
+      publishedCount: snapshot.publishedCount + 1,
+      discardedCount:
+        snapshot.discardedCount + (didDiscardOldest ? 1 : 0),
+    };
+    notify();
+
+    return entry;
+  };
+
   return {
     getSnapshot: () => snapshot,
     getHasEntriesSnapshot: () => snapshot.count > 0,
@@ -116,7 +195,7 @@ export function createGameLogStore(
       return buffer[(startIndex + index) % normalizedCapacity];
     },
     readEntries: () => {
-      const entries = new Array<DamageLogEntry>(size);
+      const entries = new Array<GameLogEntry>(size);
 
       for (let index = 0; index < size; index += 1) {
         const entry = buffer[(startIndex + index) % normalizedCapacity];
@@ -149,28 +228,29 @@ export function createGameLogStore(
         appliedDamage: input.appliedDamage,
       };
 
-      nextSequence += 1;
-      const didDiscardOldest = size === normalizedCapacity;
-
-      if (!didDiscardOldest) {
-        buffer[(startIndex + size) % normalizedCapacity] = entry;
-        size += 1;
-      } else {
-        buffer[startIndex] = entry;
-        startIndex = (startIndex + 1) % normalizedCapacity;
+      return appendEntry(entry);
+    },
+    publishAreaPresence: (input) => {
+      if (
+        !Number.isFinite(input.areaRadiusMeters) ||
+        input.areaRadiusMeters <= 0
+      ) {
+        return null;
       }
 
-      snapshot = {
-        ...snapshot,
-        revision: snapshot.revision + 1,
-        count: size,
-        publishedCount: snapshot.publishedCount + 1,
-        discardedCount:
-          snapshot.discardedCount + (didDiscardOldest ? 1 : 0),
+      const occurredAtMs = Number.isFinite(input.occurredAtMs)
+        ? (input.occurredAtMs as number)
+        : Date.now();
+      const entry: AreaPresenceLogEntry = {
+        id: `area-presence-${occurredAtMs}-${nextSequence}`,
+        type: "area-presence",
+        occurredAtMs,
+        target: { ...input.target },
+        status: input.status,
+        areaRadiusMeters: input.areaRadiusMeters,
       };
-      notify();
 
-      return entry;
+      return appendEntry(entry);
     },
     clear: () => {
       if (size === 0 && snapshot.discardedCount === 0) {

@@ -31,6 +31,7 @@ export interface TestDummyDefinition {
   displayName: string;
   xMeters: number;
   zMeters: number;
+  footprintRadiusMeters: number;
   maximumHealth: number;
 }
 

@@ -1,18 +1,35 @@
 import { useEffect, useMemo } from "react";
 import {
+  CanvasTexture,
   Color,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
+  LinearFilter,
   PlaneGeometry,
   ShaderMaterial,
 } from "three";
-import { HEALTH_BAR_SEGMENT_COUNT } from "../../game/overheadStatus";
+import {
+  formatHealthSignalValue,
+  getHealthSignalColor,
+  HEALTH_BAR_SEGMENT_COUNT,
+  HEALTH_SIGNAL_DURATION_MS,
+  HEALTH_SIGNAL_GLYPHS,
+  HEALTH_SIGNAL_GLYPHS_PER_ROW,
+  HEALTH_SIGNAL_STACK_SIZE,
+} from "../../game/overheadStatus";
 import type { ActiveEffect } from "../../game/types";
 
 const BAR_WIDTH = 2.49;
 const BAR_HEIGHT = 0.42;
 const EFFECT_SIZE = 0.58;
 const EFFECT_SPACING = 0.64;
+const SIGNAL_GLYPH_WIDTH = 0.4;
+const SIGNAL_GLYPH_HEIGHT = 0.54;
+const SIGNAL_GLYPH_SPACING = 0.3;
+const SIGNAL_BASE_OFFSET_Y = 1.15;
+const SIGNAL_ROW_SPACING = 0.48;
+const SIGNAL_ATLAS_CELL_WIDTH_PX = 64;
+const SIGNAL_ATLAS_CELL_HEIGHT_PX = 80;
 const DEFAULT_CAPACITY = 128;
 const colorScratch = new Color();
 
@@ -136,6 +153,46 @@ const EFFECT_FRAGMENT_SHADER = `
   }
 `;
 
+const SIGNAL_VERTEX_SHADER = `
+  attribute vec3 instanceWorldPosition;
+  attribute float instanceOffsetX;
+  attribute float instanceOffsetY;
+  attribute float instanceGlyph;
+  attribute vec3 instanceSignalColor;
+  attribute float instanceVisible;
+  varying vec2 vUv;
+  varying float vGlyph;
+  varying vec3 vSignalColor;
+  varying float vVisible;
+
+  void main() {
+    vUv = uv;
+    vGlyph = instanceGlyph;
+    vSignalColor = instanceSignalColor;
+    vVisible = instanceVisible;
+    vec4 center = modelViewMatrix * vec4(instanceWorldPosition, 1.0);
+    center.xy += vec2(instanceOffsetX, instanceOffsetY) + position.xy;
+    gl_Position = projectionMatrix * center;
+  }
+`;
+
+const SIGNAL_FRAGMENT_SHADER = `
+  uniform sampler2D glyphAtlas;
+  varying vec2 vUv;
+  varying float vGlyph;
+  varying vec3 vSignalColor;
+  varying float vVisible;
+
+  void main() {
+    if (vVisible < 0.5) discard;
+    float atlasWidth = ${HEALTH_SIGNAL_GLYPHS.length}.0;
+    vec2 atlasUv = vec2((vGlyph + vUv.x) / atlasWidth, vUv.y);
+    vec4 glyph = texture2D(glyphAtlas, atlasUv);
+    if (glyph.a < 0.02) discard;
+    gl_FragColor = vec4(glyph.rgb * vSignalColor, glyph.a);
+  }
+`;
+
 export class OverheadStatusRegistry {
   readonly barPosition: InstancedBufferAttribute;
   readonly barHealth: InstancedBufferAttribute;
@@ -146,9 +203,21 @@ export class OverheadStatusRegistry {
   readonly effectProgress: InstancedBufferAttribute;
   readonly effectType: InstancedBufferAttribute;
   readonly effectVisible: InstancedBufferAttribute;
+  readonly signalPosition: InstancedBufferAttribute;
+  readonly signalOffsetX: InstancedBufferAttribute;
+  readonly signalOffsetY: InstancedBufferAttribute;
+  readonly signalGlyph: InstancedBufferAttribute;
+  readonly signalColor: InstancedBufferAttribute;
+  readonly signalVisible: InstancedBufferAttribute;
   private readonly registrations = new Map<string, OverheadStatusRegistration>();
   private readonly freeSlots: number[] = [];
+  private readonly signalDeltas: Float64Array;
+  private readonly signalExpiresAtMs: Float64Array;
+  private readonly signalRowsActive: Uint8Array;
+  private readonly signalEntitiesActive: Uint8Array;
+  private readonly activeSignalSlots: number[] = [];
   private dirty = true;
+  private signalDirty = false;
 
   constructor(private readonly capacity = DEFAULT_CAPACITY) {
     this.barPosition = new InstancedBufferAttribute(
@@ -188,6 +257,37 @@ export class OverheadStatusRegistry {
       new Float32Array(effectCapacity),
       1,
     );
+    const signalRowCapacity = capacity * HEALTH_SIGNAL_STACK_SIZE;
+    const signalGlyphCapacity =
+      signalRowCapacity * HEALTH_SIGNAL_GLYPHS_PER_ROW;
+    this.signalPosition = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity * 3),
+      3,
+    );
+    this.signalOffsetX = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity),
+      1,
+    );
+    this.signalOffsetY = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity),
+      1,
+    );
+    this.signalGlyph = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity),
+      1,
+    );
+    this.signalColor = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity * 3),
+      3,
+    );
+    this.signalVisible = new InstancedBufferAttribute(
+      new Float32Array(signalGlyphCapacity),
+      1,
+    );
+    this.signalDeltas = new Float64Array(signalRowCapacity);
+    this.signalExpiresAtMs = new Float64Array(signalRowCapacity);
+    this.signalRowsActive = new Uint8Array(signalRowCapacity);
+    this.signalEntitiesActive = new Uint8Array(capacity);
 
     for (let slot = capacity - 1; slot >= 0; slot -= 1) {
       this.freeSlots.push(slot);
@@ -245,6 +345,12 @@ export class OverheadStatusRegistry {
       changed = this.writeColor(slot, update.healthColor) || changed;
     }
 
+    if (this.signalEntitiesActive[slot] === 1) {
+      this.signalDirty =
+        this.writeHealthSignalPositions(slot, update.x, update.y, update.z) ||
+        this.signalDirty;
+    }
+
     let supportedCount = 0;
 
     for (
@@ -300,6 +406,121 @@ export class OverheadStatusRegistry {
     this.dirty = this.dirty || changed;
   }
 
+  pushHealthSignal(
+    receiverId: string,
+    healthDelta: number,
+    timestampMs = performance.now(),
+  ): boolean {
+    const registration = this.registrations.get(receiverId);
+
+    if (!registration || !Number.isFinite(healthDelta)) {
+      return false;
+    }
+
+    const safeTimestampMs = Number.isFinite(timestampMs)
+      ? timestampMs
+      : performance.now();
+    this.expireHealthSignals(safeTimestampMs);
+    const rowBase = registration.slot * HEALTH_SIGNAL_STACK_SIZE;
+
+    for (let row = HEALTH_SIGNAL_STACK_SIZE - 1; row > 0; row -= 1) {
+      const destination = rowBase + row;
+      const source = destination - 1;
+      this.signalDeltas[destination] = this.signalDeltas[source];
+      this.signalExpiresAtMs[destination] = this.signalExpiresAtMs[source];
+      this.signalRowsActive[destination] = this.signalRowsActive[source];
+    }
+
+    this.signalDeltas[rowBase] = healthDelta;
+    this.signalExpiresAtMs[rowBase] =
+      safeTimestampMs + HEALTH_SIGNAL_DURATION_MS;
+    this.signalRowsActive[rowBase] = 1;
+
+    if (this.signalEntitiesActive[registration.slot] === 0) {
+      this.signalEntitiesActive[registration.slot] = 1;
+      this.activeSignalSlots.push(registration.slot);
+    }
+
+    this.writeHealthSignalRows(registration.slot);
+    this.signalDirty = true;
+    return true;
+  }
+
+  expireHealthSignals(timestampMs = performance.now()): void {
+    if (!Number.isFinite(timestampMs)) {
+      return;
+    }
+
+    for (
+      let activeIndex = this.activeSignalSlots.length - 1;
+      activeIndex >= 0;
+      activeIndex -= 1
+    ) {
+      const slot = this.activeSignalSlots[activeIndex];
+      const rowBase = slot * HEALTH_SIGNAL_STACK_SIZE;
+      let hasExpiredSignal = false;
+
+      for (let row = 0; row < HEALTH_SIGNAL_STACK_SIZE; row += 1) {
+        const index = rowBase + row;
+
+        if (
+          this.signalRowsActive[index] === 1 &&
+          this.signalExpiresAtMs[index] <= timestampMs
+        ) {
+          hasExpiredSignal = true;
+          break;
+        }
+      }
+
+      if (!hasExpiredSignal) {
+        continue;
+      }
+
+      let writeRow = 0;
+
+      for (let readRow = 0; readRow < HEALTH_SIGNAL_STACK_SIZE; readRow += 1) {
+        const source = rowBase + readRow;
+
+        if (
+          this.signalRowsActive[source] === 0 ||
+          this.signalExpiresAtMs[source] <= timestampMs
+        ) {
+          continue;
+        }
+
+        const destination = rowBase + writeRow;
+
+        if (destination !== source) {
+          this.signalDeltas[destination] = this.signalDeltas[source];
+          this.signalExpiresAtMs[destination] =
+            this.signalExpiresAtMs[source];
+          this.signalRowsActive[destination] = 1;
+        }
+
+        writeRow += 1;
+      }
+
+      for (let row = writeRow; row < HEALTH_SIGNAL_STACK_SIZE; row += 1) {
+        const index = rowBase + row;
+        this.signalDeltas[index] = 0;
+        this.signalExpiresAtMs[index] = 0;
+        this.signalRowsActive[index] = 0;
+      }
+
+      this.writeHealthSignalRows(slot);
+
+      if (writeRow === 0) {
+        this.signalEntitiesActive[slot] = 0;
+        const finalIndex = this.activeSignalSlots.length - 1;
+        this.activeSignalSlots[activeIndex] =
+          this.activeSignalSlots[finalIndex];
+        this.activeSignalSlots.pop();
+      }
+
+      this.signalDirty = true;
+    }
+  }
+
   unregister(registration: OverheadStatusRegistration): void {
     if (this.registrations.get(registration.id) !== registration) {
       return;
@@ -309,29 +530,177 @@ export class OverheadStatusRegistry {
     this.writeScalar(this.barVisible, registration.slot, 0);
     this.writeScalar(this.effectVisible, registration.slot * 2, 0);
     this.writeScalar(this.effectVisible, registration.slot * 2 + 1, 0);
+    this.clearHealthSignals(registration.slot);
     this.freeSlots.push(registration.slot);
     this.dirty = true;
   }
 
   flush(): void {
-    if (!this.dirty) {
+    if (!this.dirty && !this.signalDirty) {
       return;
     }
 
-    this.barPosition.needsUpdate = true;
-    this.barHealth.needsUpdate = true;
-    this.barColor.needsUpdate = true;
-    this.barVisible.needsUpdate = true;
-    this.effectPosition.needsUpdate = true;
-    this.effectOffset.needsUpdate = true;
-    this.effectProgress.needsUpdate = true;
-    this.effectType.needsUpdate = true;
-    this.effectVisible.needsUpdate = true;
-    this.dirty = false;
+    if (this.dirty) {
+      this.barPosition.needsUpdate = true;
+      this.barHealth.needsUpdate = true;
+      this.barColor.needsUpdate = true;
+      this.barVisible.needsUpdate = true;
+      this.effectPosition.needsUpdate = true;
+      this.effectOffset.needsUpdate = true;
+      this.effectProgress.needsUpdate = true;
+      this.effectType.needsUpdate = true;
+      this.effectVisible.needsUpdate = true;
+      this.dirty = false;
+    }
+
+    if (this.signalDirty) {
+      this.signalPosition.needsUpdate = true;
+      this.signalOffsetX.needsUpdate = true;
+      this.signalOffsetY.needsUpdate = true;
+      this.signalGlyph.needsUpdate = true;
+      this.signalColor.needsUpdate = true;
+      this.signalVisible.needsUpdate = true;
+      this.signalDirty = false;
+    }
   }
 
   getCapacity(): number {
     return this.capacity;
+  }
+
+  private writeHealthSignalRows(slot: number): void {
+    const rowBase = slot * HEALTH_SIGNAL_STACK_SIZE;
+    const x = this.barPosition.getX(slot);
+    const y = this.barPosition.getY(slot);
+    const z = this.barPosition.getZ(slot);
+
+    for (let row = 0; row < HEALTH_SIGNAL_STACK_SIZE; row += 1) {
+      const signalIndex = rowBase + row;
+      const glyphBase = signalIndex * HEALTH_SIGNAL_GLYPHS_PER_ROW;
+
+      if (this.signalRowsActive[signalIndex] === 0) {
+        for (
+          let glyph = 0;
+          glyph < HEALTH_SIGNAL_GLYPHS_PER_ROW;
+          glyph += 1
+        ) {
+          this.writeScalar(this.signalVisible, glyphBase + glyph, 0);
+        }
+
+        continue;
+      }
+
+      const healthDelta = this.signalDeltas[signalIndex];
+      const value = formatHealthSignalValue(healthDelta);
+      const glyphCount = Math.min(
+        value.length,
+        HEALTH_SIGNAL_GLYPHS_PER_ROW,
+      );
+      const offsetStart = ((glyphCount - 1) * -SIGNAL_GLYPH_SPACING) / 2;
+      colorScratch.set(getHealthSignalColor(healthDelta));
+
+      for (
+        let glyph = 0;
+        glyph < HEALTH_SIGNAL_GLYPHS_PER_ROW;
+        glyph += 1
+      ) {
+        const glyphSlot = glyphBase + glyph;
+
+        if (glyph >= glyphCount) {
+          this.writeScalar(this.signalVisible, glyphSlot, 0);
+          continue;
+        }
+
+        const atlasGlyph = HEALTH_SIGNAL_GLYPHS.indexOf(value.charAt(glyph));
+        this.writeVector(this.signalPosition, glyphSlot, x, y, z);
+        this.writeScalar(
+          this.signalOffsetX,
+          glyphSlot,
+          offsetStart + glyph * SIGNAL_GLYPH_SPACING,
+        );
+        this.writeScalar(
+          this.signalOffsetY,
+          glyphSlot,
+          SIGNAL_BASE_OFFSET_Y + row * SIGNAL_ROW_SPACING,
+        );
+        this.writeScalar(this.signalGlyph, glyphSlot, atlasGlyph);
+        this.writeVector(
+          this.signalColor,
+          glyphSlot,
+          colorScratch.r,
+          colorScratch.g,
+          colorScratch.b,
+        );
+        this.writeScalar(this.signalVisible, glyphSlot, 1);
+      }
+    }
+  }
+
+  private writeHealthSignalPositions(
+    slot: number,
+    x: number,
+    y: number,
+    z: number,
+  ): boolean {
+    const glyphBase =
+      slot * HEALTH_SIGNAL_STACK_SIZE * HEALTH_SIGNAL_GLYPHS_PER_ROW;
+    const glyphEnd =
+      glyphBase + HEALTH_SIGNAL_STACK_SIZE * HEALTH_SIGNAL_GLYPHS_PER_ROW;
+    let changed = false;
+
+    for (let glyph = glyphBase; glyph < glyphEnd; glyph += 1) {
+      if (this.signalVisible.getX(glyph) < 0.5) {
+        continue;
+      }
+
+      changed =
+        this.writeVector(this.signalPosition, glyph, x, y, z) || changed;
+    }
+
+    return changed;
+  }
+
+  private clearHealthSignals(slot: number): void {
+    const rowBase = slot * HEALTH_SIGNAL_STACK_SIZE;
+    let changed = false;
+
+    for (let row = 0; row < HEALTH_SIGNAL_STACK_SIZE; row += 1) {
+      const signalIndex = rowBase + row;
+      const glyphBase = signalIndex * HEALTH_SIGNAL_GLYPHS_PER_ROW;
+      this.signalDeltas[signalIndex] = 0;
+      this.signalExpiresAtMs[signalIndex] = 0;
+      this.signalRowsActive[signalIndex] = 0;
+
+      for (
+        let glyph = 0;
+        glyph < HEALTH_SIGNAL_GLYPHS_PER_ROW;
+        glyph += 1
+      ) {
+        changed =
+          this.writeScalar(this.signalVisible, glyphBase + glyph, 0) || changed;
+      }
+    }
+
+    if (this.signalEntitiesActive[slot] === 1) {
+      this.signalEntitiesActive[slot] = 0;
+
+      for (
+        let index = this.activeSignalSlots.length - 1;
+        index >= 0;
+        index -= 1
+      ) {
+        if (this.activeSignalSlots[index] !== slot) {
+          continue;
+        }
+
+        const finalIndex = this.activeSignalSlots.length - 1;
+        this.activeSignalSlots[index] = this.activeSignalSlots[finalIndex];
+        this.activeSignalSlots.pop();
+        break;
+      }
+    }
+
+    this.signalDirty = this.signalDirty || changed;
   }
 
   private writeColor(slot: number, color: string): boolean {
@@ -392,6 +761,42 @@ function createGeometry(
   return geometry;
 }
 
+function createHealthSignalAtlas(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = SIGNAL_ATLAS_CELL_WIDTH_PX * HEALTH_SIGNAL_GLYPHS.length;
+  canvas.height = SIGNAL_ATLAS_CELL_HEIGHT_PX;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("A 2D canvas context is required for health signals.");
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = '700 54px "Cascadia Mono", "Consolas", monospace';
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.lineJoin = "round";
+  context.strokeStyle = "#071018";
+  context.lineWidth = 9;
+  context.fillStyle = "#ffffff";
+
+  for (let index = 0; index < HEALTH_SIGNAL_GLYPHS.length; index += 1) {
+    const glyph = HEALTH_SIGNAL_GLYPHS.charAt(index);
+    const x =
+      index * SIGNAL_ATLAS_CELL_WIDTH_PX +
+      SIGNAL_ATLAS_CELL_WIDTH_PX / 2;
+    const y = SIGNAL_ATLAS_CELL_HEIGHT_PX * 0.54;
+    context.strokeText(glyph, x, y);
+    context.fillText(glyph, x, y);
+  }
+
+  const texture = new CanvasTexture(canvas);
+  texture.generateMipmaps = false;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  return texture;
+}
+
 interface OverheadStatusLayerProps {
   registry: OverheadStatusRegistry;
 }
@@ -434,7 +839,44 @@ export function OverheadStatusLayer({ registry }: OverheadStatusLayerProps) {
       depthTest: false,
       depthWrite: false,
     });
-    return { barGeometry, barMaterial, effectGeometry, effectMaterial };
+    const signalGeometry = createGeometry(
+      SIGNAL_GLYPH_WIDTH,
+      SIGNAL_GLYPH_HEIGHT,
+      registry.getCapacity() *
+        HEALTH_SIGNAL_STACK_SIZE *
+        HEALTH_SIGNAL_GLYPHS_PER_ROW,
+    );
+    signalGeometry.setAttribute(
+      "instanceWorldPosition",
+      registry.signalPosition,
+    );
+    signalGeometry.setAttribute("instanceOffsetX", registry.signalOffsetX);
+    signalGeometry.setAttribute("instanceOffsetY", registry.signalOffsetY);
+    signalGeometry.setAttribute("instanceGlyph", registry.signalGlyph);
+    signalGeometry.setAttribute(
+      "instanceSignalColor",
+      registry.signalColor,
+    );
+    signalGeometry.setAttribute("instanceVisible", registry.signalVisible);
+    const signalAtlas = createHealthSignalAtlas();
+    const signalMaterial = new ShaderMaterial({
+      uniforms: { glyphAtlas: { value: signalAtlas } },
+      vertexShader: SIGNAL_VERTEX_SHADER,
+      fragmentShader: SIGNAL_FRAGMENT_SHADER,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    return {
+      barGeometry,
+      barMaterial,
+      effectGeometry,
+      effectMaterial,
+      signalGeometry,
+      signalMaterial,
+      signalAtlas,
+    };
   }, [registry]);
 
   useEffect(
@@ -443,6 +885,9 @@ export function OverheadStatusLayer({ registry }: OverheadStatusLayerProps) {
       resources.barMaterial.dispose();
       resources.effectGeometry.dispose();
       resources.effectMaterial.dispose();
+      resources.signalGeometry.dispose();
+      resources.signalMaterial.dispose();
+      resources.signalAtlas.dispose();
     },
     [resources],
   );
@@ -460,6 +905,12 @@ export function OverheadStatusLayer({ registry }: OverheadStatusLayerProps) {
         material={resources.effectMaterial}
         frustumCulled={false}
         renderOrder={20}
+      />
+      <mesh
+        geometry={resources.signalGeometry}
+        material={resources.signalMaterial}
+        frustumCulled={false}
+        renderOrder={30}
       />
     </>
   );
