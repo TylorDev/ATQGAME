@@ -34,7 +34,8 @@ describe("MovementController", () => {
     const controller = new MovementController();
 
     controller.beginRightPress({ x: 4, z: 0 }, 0);
-    const snapshot = controller.step(0.05, 180, noObstacles);
+    advance(controller, 4, 0.05);
+    const snapshot = controller.getSnapshot();
 
     expect(snapshot).toMatchObject({
       mode: "holdDirection",
@@ -58,7 +59,8 @@ describe("MovementController", () => {
     const controller = new MovementController();
 
     controller.beginRightPress({ x: 10, z: 0 }, 0);
-    const snapshot = controller.step(0.05, 180, noObstacles);
+    advance(controller, 4, 0.05);
+    const snapshot = controller.getSnapshot();
 
     expect(snapshot.mode).toBe("holdDirection");
     expect(snapshot.position.x).toBeGreaterThan(0);
@@ -68,22 +70,79 @@ describe("MovementController", () => {
     const controller = new MovementController();
 
     controller.beginRightPress({ x: 10, z: 0 }, 0);
-    controller.step(0.05, 180, noObstacles);
+    advance(controller, 4, 0.05);
     controller.updatePointerGround({ x: 0, z: 10 });
-    const snapshot = controller.step(0.05, 230, noObstacles);
+    controller.step(0.05, 230, noObstacles);
+    const snapshot = controller.getSnapshot();
 
     expect(snapshot.position.z).toBeGreaterThan(0);
     expect(snapshot.facing.z).toBeGreaterThan(0.99);
+  });
+
+  it("reverses held direction 180 degrees on the next movement step", () => {
+    const controller = new MovementController();
+
+    controller.beginRightPress({ x: 10, z: 0 }, 0);
+    advance(controller, 4, 0.05);
+    const positionBeforeTurn = controller.getSnapshot().position.x;
+    controller.updatePointerGround({ x: -10, z: 0 });
+    controller.step(0.05, 230, noObstacles);
+    const snapshot = controller.getSnapshot();
+
+    expect(snapshot.position.x).toBeLessThan(positionBeforeTurn);
+    expect(snapshot.facing.x).toBeLessThan(-0.99);
+    expect(snapshot.facing.z).toBeCloseTo(0, 5);
+  });
+
+  it("reverses the first held press on the next tick before the hold delay", () => {
+    const controller = new MovementController();
+
+    controller.beginRightPress({ x: 10, z: 0 }, 5_000);
+    controller.step(1 / 60, 0, noObstacles);
+    const positionBeforeTurn = controller.getSnapshot().position.x;
+    controller.updatePointerGround({ x: -10, z: 0 });
+    controller.step(1 / 60, 1_000 / 60, noObstacles);
+    const snapshot = controller.getSnapshot();
+
+    expect(snapshot.mode).toBe("clickToPoint");
+    expect(snapshot.position.x).toBeLessThan(positionBeforeTurn);
+    expect(snapshot.facing.x).toBeLessThan(-0.99);
+    expect(snapshot.speedMetersPerSecond).toBeCloseTo(5.5, 5);
+  });
+
+  it("enters held mode from simulated elapsed time when clocks are offset", () => {
+    const controller = new MovementController();
+
+    controller.beginRightPress({ x: 10, z: 0 }, 5_000);
+    advance(controller, 11, 1 / 60, 0);
+
+    expect(controller.getSnapshot().mode).toBe("holdDirection");
+  });
+
+  it("confirms the latest pointer point as a short-click destination", () => {
+    const controller = new MovementController();
+
+    controller.beginRightPress({ x: 10, z: 0 }, 0);
+    controller.updatePointerGround({ x: -10, z: 0 });
+    controller.endRightPress(100);
+    const snapshot = controller.getSnapshot();
+
+    expect(snapshot).toMatchObject({
+      mode: "clickToPoint",
+      target: { x: -10, z: 0 },
+      isClickTargetConfirmed: true,
+    });
   });
 
   it("stops held movement when the button is released", () => {
     const controller = new MovementController();
 
     controller.beginRightPress({ x: 10, z: 0 }, 0);
-    controller.step(0.05, 180, noObstacles);
+    advance(controller, 4, 0.05);
     controller.endRightPress(200);
     const before = controller.getSnapshot().position;
-    const after = controller.step(0.05, 250, noObstacles).position;
+    controller.step(0.05, 250, noObstacles);
+    const after = controller.getSnapshot().position;
 
     expect(controller.getSnapshot().mode).toBe("idle");
     expect(after).toEqual(before);
@@ -153,7 +212,8 @@ describe("MovementController", () => {
 
     controller.beginRightPress({ x: 5, z: 0 }, 0);
     controller.endRightPress(100);
-    const snapshot = controller.step(0.05, 150, noObstacles);
+    controller.step(0.05, 150, noObstacles);
+    const snapshot = controller.getSnapshot();
 
     expect(snapshot.mode).toBe("blocked");
     expect(snapshot.position.x).toBe(0.4);
@@ -173,9 +233,11 @@ describe("MovementController", () => {
     });
 
     controller.beginRightPress({ x: 5, z: 0 }, 0);
-    const blocked = controller.step(0.05, 180, [obstacle]);
+    advance(controller, 4, 0.05, 0, [obstacle]);
+    const blocked = controller.getSnapshot();
     controller.updatePointerGround({ x: 0.3, z: 5 });
-    const redirected = controller.step(0.05, 230, [obstacle]);
+    controller.step(0.05, 230, [obstacle]);
+    const redirected = controller.getSnapshot();
 
     expect(blocked.mode).toBe("blocked");
     expect(redirected.mode).toBe("holdDirection");
@@ -189,7 +251,8 @@ describe("MovementController", () => {
     controller.step(0.05, 180, noObstacles);
     controller.cancelInput();
     const before = controller.getSnapshot().position;
-    const after = controller.step(0.05, 230, noObstacles);
+    controller.step(0.05, 230, noObstacles);
+    const after = controller.getSnapshot();
 
     expect(after.mode).toBe("idle");
     expect(after.position).toEqual(before);
@@ -203,9 +266,12 @@ describe("MovementController", () => {
     controller.beginRightPress({ x: 10, z: 0 }, 0);
     controller.endRightPress(100);
 
-    const walking = controller.step(0.05, 150, noObstacles, 5.5);
-    const boosted = controller.step(0.05, 200, noObstacles, 9.9);
-    const stopped = controller.step(0.05, 250, noObstacles, 0);
+    controller.step(0.05, 150, noObstacles, 5.5);
+    const walking = controller.getSnapshot();
+    controller.step(0.05, 200, noObstacles, 9.9);
+    const boosted = controller.getSnapshot();
+    controller.step(0.05, 250, noObstacles, 0);
+    const stopped = controller.getSnapshot();
 
     expect(walking.speedMetersPerSecond).toBeCloseTo(5.5, 5);
     expect(boosted.speedMetersPerSecond).toBeCloseTo(9.9, 5);
@@ -248,7 +314,8 @@ describe("MovementController", () => {
     controller.beginRightPress({ x: -5, z: 0 }, 0);
     controller.endRightPress(100);
     controller.resumeFollowTarget({ x: 5, z: 0 }, 1);
-    const snapshot = controller.step(0.05, 150, noObstacles);
+    controller.step(0.05, 150, noObstacles);
+    const snapshot = controller.getSnapshot();
 
     expect(snapshot).toMatchObject({
       mode: "followTarget",

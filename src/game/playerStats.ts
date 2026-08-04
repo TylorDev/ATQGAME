@@ -74,9 +74,14 @@ export function calculateMovementSpeedMetersPerSecond(
 
 export class SpeedBoostController {
   private activatedAtMs: number | null = null;
+  private readonly state: SpeedBoostSnapshot = {
+    isActive: false,
+    durationRemainingMs: 0,
+    cooldownRemainingMs: 0,
+  };
 
   activate(timestampMs: number): boolean {
-    if (this.getSnapshot(timestampMs).cooldownRemainingMs > 0) {
+    if (this.update(timestampMs).cooldownRemainingMs > 0) {
       return false;
     }
 
@@ -85,43 +90,47 @@ export class SpeedBoostController {
   }
 
   getSnapshot(timestampMs: number): SpeedBoostSnapshot {
+    return { ...this.update(timestampMs) };
+  }
+
+  update(timestampMs: number): SpeedBoostSnapshot {
     if (this.activatedAtMs === null) {
-      return {
-        isActive: false,
-        durationRemainingMs: 0,
-        cooldownRemainingMs: 0,
-      };
+      this.state.isActive = false;
+      this.state.durationRemainingMs = 0;
+      this.state.cooldownRemainingMs = 0;
+      return this.state;
     }
 
     const elapsedMs = Math.max(0, timestampMs - this.activatedAtMs);
     const durationRemainingMs = Math.max(SPEED_BOOST_DURATION_MS - elapsedMs, 0);
     const cooldownRemainingMs = Math.max(SPEED_BOOST_COOLDOWN_MS - elapsedMs, 0);
 
-    return {
-      isActive: durationRemainingMs > 0,
-      durationRemainingMs,
-      cooldownRemainingMs,
-    };
+    this.state.isActive = durationRemainingMs > 0;
+    this.state.durationRemainingMs = durationRemainingMs;
+    this.state.cooldownRemainingMs = cooldownRemainingMs;
+    return this.state;
   }
 }
 
 export function getCurrentPlayerSpeedMetersPerSecond(
   speedBoost: SpeedBoostSnapshot,
 ): number {
-  return calculateMovementSpeedMetersPerSecond(
-    PLAYER_BASE_SPEED_METERS_PER_SECOND,
-    speedBoost.isActive ? [SPEED_BOOST_MODIFIER] : [],
+  return Math.max(
+    0,
+    PLAYER_BASE_SPEED_METERS_PER_SECOND *
+      (speedBoost.isActive ? SPEED_BOOST_MULTIPLIER : 1),
   );
 }
 
-export function getActivePlayerEffects(
+export function writeActivePlayerEffects(
+  output: ActiveEffect[],
   speedBoost: SpeedBoostSnapshot,
   isBurning: boolean,
 ): readonly ActiveEffect[] {
-  const effects: ActiveEffect[] = [];
+  output.length = 0;
 
   if (speedBoost.isActive) {
-    effects.push({
+    output.push({
       ...SPEED_BOOST_EFFECT,
       timerProgress: getEffectTimerProgress(
         speedBoost.durationRemainingMs,
@@ -131,8 +140,15 @@ export function getActivePlayerEffects(
   }
 
   if (isBurning) {
-    effects.push(BURNING_EFFECT);
+    output.push(BURNING_EFFECT);
   }
 
-  return effects;
+  return output;
+}
+
+export function getActivePlayerEffects(
+  speedBoost: SpeedBoostSnapshot,
+  isBurning: boolean,
+): readonly ActiveEffect[] {
+  return writeActivePlayerEffects([], speedBoost, isBurning);
 }

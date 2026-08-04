@@ -93,7 +93,8 @@ h3 {
   font-size: $font-size-sm;
 }
 
-.profile {
+.profile,
+.graphics {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.8fr);
   gap: $spacing-5;
@@ -105,15 +106,60 @@ h3 {
   border-radius: $border-radius-md;
 }
 
-.profile h3 {
+.profile h3,
+.graphics h3 {
   color: $color-secondary;
 }
 
-.profile p {
+.profile p,
+.graphics p {
   margin-top: $spacing-1;
   color: $color-text-secondary;
   font-size: $font-size-xs;
   line-height: $line-height-md;
+}
+
+.graphics {
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 0.55fr);
+  align-items: center;
+}
+
+.field select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: $spacing-2 $spacing-3;
+  color: $color-text-primary;
+  background: rgb(9 14 21 / 92%);
+  border: $border-width-default solid rgb(99 194 180 / 34%);
+  border-radius: $border-radius-sm;
+}
+
+.toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: $spacing-2;
+  align-items: center;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  cursor: pointer;
+}
+
+.checkbox {
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  color: $color-background;
+  background: rgb(9 14 21 / 92%);
+  border: $border-width-default solid $color-secondary;
+  border-radius: $border-radius-sm;
+  cursor: pointer;
+  place-items: center;
+}
+
+.indicator {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
 }
 
 .field {
@@ -182,6 +228,10 @@ h3 {
   }
 
   .profile {
+    grid-template-columns: 1fr;
+  }
+
+  .graphics {
     grid-template-columns: 1fr;
   }
 }

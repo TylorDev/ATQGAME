@@ -4,27 +4,101 @@ import {
   PLAYER_AUTO_ATTACK_RANGE_METERS,
 } from "./constants";
 import { calculateGroundDistanceMeters } from "./distance";
-import type { GroundPoint, TestDummyDefinition, TestDummySnapshot } from "./types";
+import type {
+  GroundPoint,
+  TestDummyDefinition,
+  TestDummySnapshot,
+} from "./types";
 
 export const TEST_DUMMY_RESPAWN_DURATION_SECONDS = 3;
 export const DPS_WINDOW_SECONDS = 1;
 const TIME_EPSILON_SECONDS = 1e-6;
+const INITIAL_DAMAGE_BUFFER_CAPACITY = 16;
 
-interface DamageEvent {
-  amount: number;
-  timestampMs: number;
-}
-
-export interface TestDummyStepResult {
-  didRespawn: boolean;
-  snapshot: TestDummySnapshot;
-}
+export interface TestDummyStateView extends TestDummySnapshot {}
 
 export interface TestDummyDamageResult {
   appliedDamage: number;
   didDefeat: boolean;
   didApplyDamage: boolean;
-  snapshot: TestDummySnapshot;
+}
+
+export class RollingDamageWindow {
+  private timestamps: Float64Array;
+  private amounts: Float64Array;
+  private head = 0;
+  private size = 0;
+  private total = 0;
+
+  constructor(
+    private readonly windowMs: number,
+    initialCapacity = INITIAL_DAMAGE_BUFFER_CAPACITY,
+  ) {
+    const capacity = Math.max(1, Math.floor(initialCapacity));
+    this.timestamps = new Float64Array(capacity);
+    this.amounts = new Float64Array(capacity);
+  }
+
+  push(amount: number, timestampMs: number): void {
+    this.prune(timestampMs);
+
+    if (this.size === this.timestamps.length) {
+      this.grow();
+    }
+
+    const tail = (this.head + this.size) % this.timestamps.length;
+    this.timestamps[tail] = timestampMs;
+    this.amounts[tail] = amount;
+    this.size += 1;
+    this.total += amount;
+  }
+
+  getTotal(timestampMs: number): number {
+    this.prune(timestampMs);
+    return this.total;
+  }
+
+  reset(): void {
+    this.head = 0;
+    this.size = 0;
+    this.total = 0;
+  }
+
+  getCapacity(): number {
+    return this.timestamps.length;
+  }
+
+  private prune(timestampMs: number): void {
+    const windowStartMs = timestampMs - this.windowMs;
+
+    while (
+      this.size > 0 &&
+      this.timestamps[this.head] <= windowStartMs
+    ) {
+      this.total -= this.amounts[this.head];
+      this.head = (this.head + 1) % this.timestamps.length;
+      this.size -= 1;
+    }
+
+    if (Math.abs(this.total) <= Number.EPSILON) {
+      this.total = 0;
+    }
+  }
+
+  private grow(): void {
+    const nextTimestamps = new Float64Array(this.timestamps.length * 2);
+    const nextAmounts = new Float64Array(this.amounts.length * 2);
+
+    for (let index = 0; index < this.size; index += 1) {
+      const sourceIndex = (this.head + index) % this.timestamps.length;
+      nextTimestamps[index] = this.timestamps[sourceIndex];
+      nextAmounts[index] = this.amounts[sourceIndex];
+    }
+
+    this.timestamps = nextTimestamps;
+    this.amounts = nextAmounts;
+    this.head = 0;
+  }
 }
 
 function sanitizeDamage(damage: number): number {
@@ -42,103 +116,119 @@ export function isWithinAutoAttackRange(
 }
 
 export class TestDummyController {
-  private currentHealth: number;
-  private lastDamageReceived = 0;
-  private totalDamageReceived = 0;
-  private damageEvents: DamageEvent[] = [];
-  private isDefeated = false;
-  private respawnRemainingSeconds = 0;
+  private readonly damageWindow = new RollingDamageWindow(
+    DPS_WINDOW_SECONDS * 1_000,
+  );
+  private readonly state: TestDummyStateView;
+  private readonly damageResult: TestDummyDamageResult = {
+    appliedDamage: 0,
+    didDefeat: false,
+    didApplyDamage: false,
+  };
 
   constructor(private readonly definition: TestDummyDefinition) {
-    this.currentHealth = definition.maximumHealth;
+    this.state = {
+      id: definition.id,
+      currentHealth: definition.maximumHealth,
+      maximumHealth: definition.maximumHealth,
+      lastDamageReceived: 0,
+      totalDamageReceived: 0,
+      damagePerSecond: 0,
+      isDefeated: false,
+      respawnRemainingSeconds: 0,
+    };
   }
 
   applyDamage(damage: number, timestampMs: number): TestDummyDamageResult {
-    this.pruneDamageEvents(timestampMs);
+    this.updateDamagePerSecond(timestampMs);
     const safeDamage = sanitizeDamage(damage);
+    this.damageResult.appliedDamage = 0;
+    this.damageResult.didDefeat = false;
+    this.damageResult.didApplyDamage = false;
 
-    if (this.isDefeated || safeDamage === 0) {
-      return {
-        appliedDamage: 0,
-        didDefeat: false,
-        didApplyDamage: false,
-        snapshot: this.getSnapshot(timestampMs),
-      };
+    if (this.state.isDefeated || safeDamage === 0) {
+      return this.damageResult;
     }
 
-    const appliedDamage = Math.min(safeDamage, this.currentHealth);
-    this.currentHealth -= appliedDamage;
-    this.lastDamageReceived = appliedDamage;
-    this.totalDamageReceived += appliedDamage;
-    this.damageEvents.push({ amount: appliedDamage, timestampMs });
+    const appliedDamage = Math.min(safeDamage, this.state.currentHealth);
+    this.state.currentHealth -= appliedDamage;
+    this.state.lastDamageReceived = appliedDamage;
+    this.state.totalDamageReceived += appliedDamage;
+    this.damageWindow.push(appliedDamage, timestampMs);
+    this.state.damagePerSecond = this.damageWindow.getTotal(timestampMs);
 
-    const didDefeat = this.currentHealth === 0;
+    const didDefeat = this.state.currentHealth === 0;
 
     if (didDefeat) {
-      this.isDefeated = true;
-      this.respawnRemainingSeconds = TEST_DUMMY_RESPAWN_DURATION_SECONDS;
+      this.state.isDefeated = true;
+      this.state.respawnRemainingSeconds =
+        TEST_DUMMY_RESPAWN_DURATION_SECONDS;
     }
 
-    return {
-      appliedDamage,
-      didDefeat,
-      didApplyDamage: true,
-      snapshot: this.getSnapshot(timestampMs),
-    };
+    this.damageResult.appliedDamage = appliedDamage;
+    this.damageResult.didDefeat = didDefeat;
+    this.damageResult.didApplyDamage = true;
+    return this.damageResult;
   }
 
-  step(deltaSeconds: number, timestampMs: number): TestDummyStepResult {
-    this.pruneDamageEvents(timestampMs);
-    let didRespawn = false;
+  step(deltaSeconds: number, timestampMs: number): boolean {
+    this.updateDamagePerSecond(timestampMs);
 
-    if (this.isDefeated) {
-      this.respawnRemainingSeconds = Math.max(
-        0,
-        this.respawnRemainingSeconds - Math.max(deltaSeconds, 0),
-      );
-
-      if (this.respawnRemainingSeconds <= TIME_EPSILON_SECONDS) {
-        this.respawnRemainingSeconds = 0;
-        this.reset();
-        didRespawn = true;
-      }
+    if (!this.state.isDefeated) {
+      return false;
     }
 
-    return { didRespawn, snapshot: this.getSnapshot(timestampMs) };
+    this.state.respawnRemainingSeconds = Math.max(
+      0,
+      this.state.respawnRemainingSeconds - Math.max(deltaSeconds, 0),
+    );
+
+    if (this.state.respawnRemainingSeconds > TIME_EPSILON_SECONDS) {
+      return false;
+    }
+
+    this.reset();
+    return true;
+  }
+
+  getState(timestampMs?: number): TestDummyStateView {
+    if (timestampMs !== undefined) {
+      this.updateDamagePerSecond(timestampMs);
+    }
+
+    return this.state;
   }
 
   getSnapshot(timestampMs: number): TestDummySnapshot {
-    this.pruneDamageEvents(timestampMs);
-
-    return {
-      id: this.definition.id,
-      currentHealth: this.currentHealth,
-      maximumHealth: this.definition.maximumHealth,
-      lastDamageReceived: this.lastDamageReceived,
-      totalDamageReceived: this.totalDamageReceived,
-      damagePerSecond: this.damageEvents.reduce(
-        (totalDamage, event) => totalDamage + event.amount,
-        0,
-      ),
-      isDefeated: this.isDefeated,
-      respawnRemainingSeconds: this.respawnRemainingSeconds,
-    };
+    this.updateDamagePerSecond(timestampMs);
+    return this.writeSnapshot();
   }
 
-  private pruneDamageEvents(timestampMs: number): void {
-    const windowStartMs = timestampMs - DPS_WINDOW_SECONDS * 1_000;
-    this.damageEvents = this.damageEvents.filter(
-      (event) => event.timestampMs > windowStartMs,
-    );
+  writeSnapshot(target?: TestDummySnapshot): TestDummySnapshot {
+    const snapshot = target ?? { ...this.state };
+    snapshot.id = this.state.id;
+    snapshot.currentHealth = this.state.currentHealth;
+    snapshot.maximumHealth = this.state.maximumHealth;
+    snapshot.lastDamageReceived = this.state.lastDamageReceived;
+    snapshot.totalDamageReceived = this.state.totalDamageReceived;
+    snapshot.damagePerSecond = this.state.damagePerSecond;
+    snapshot.isDefeated = this.state.isDefeated;
+    snapshot.respawnRemainingSeconds = this.state.respawnRemainingSeconds;
+    return snapshot;
+  }
+
+  private updateDamagePerSecond(timestampMs: number): void {
+    this.state.damagePerSecond = this.damageWindow.getTotal(timestampMs);
   }
 
   private reset(): void {
-    this.currentHealth = this.definition.maximumHealth;
-    this.lastDamageReceived = 0;
-    this.totalDamageReceived = 0;
-    this.damageEvents = [];
-    this.isDefeated = false;
-    this.respawnRemainingSeconds = 0;
+    this.state.currentHealth = this.definition.maximumHealth;
+    this.state.lastDamageReceived = 0;
+    this.state.totalDamageReceived = 0;
+    this.state.damagePerSecond = 0;
+    this.state.isDefeated = false;
+    this.state.respawnRemainingSeconds = 0;
+    this.damageWindow.reset();
   }
 }
 

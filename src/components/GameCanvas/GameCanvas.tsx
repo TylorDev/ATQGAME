@@ -1,18 +1,32 @@
-import { useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import type { Group } from "three";
-import { Arena } from "./Arena";
-import { PlayerController } from "./PlayerController";
-import { TestDummy } from "@/components/TestDummy/TestDummy";
+import {
+  OverheadStatusLayer,
+  OverheadStatusRegistry,
+} from "@/components/OverheadStatus/OverheadStatusSystem";
+import {
+  PerformanceLoadScenario,
+  type PerformanceLoadScenarioHandle,
+} from "@/components/PerformanceLoadScenario/PerformanceLoadScenario";
+import {
+  TestDummy,
+  type TestDummyHandle,
+} from "@/components/TestDummy/TestDummy";
 import type { CameraSettings } from "@/game/camera";
 import { TEST_DUMMY } from "@/game/constants";
+import {
+  GameSimulation,
+  PERFORMANCE_LOAD_VISIBLE_ENTITIES,
+} from "@/game/GameSimulation";
+import type { ResolvedGraphicsQuality } from "@/game/graphicsQuality";
 import type { PlayerDebugStats } from "@/game/playerStats";
-import { createInitialTestDummySnapshot } from "@/game/testDummy";
 import type {
   PlayerCombatSettings,
   PlayerHudState,
   TestDummySnapshot,
 } from "@/game/types";
+import { Arena } from "./Arena";
+import { PlayerController } from "./PlayerController";
 import styles from "./GameCanvas.module.scss";
 
 interface GameCanvasProps {
@@ -20,69 +34,68 @@ interface GameCanvasProps {
   combatSettings: PlayerCombatSettings;
   debugVisible: boolean;
   playerName: string;
+  quality: ResolvedGraphicsQuality;
   onDebugStatsChange: (stats: PlayerDebugStats) => void;
   onPlayerHudChange: (state: PlayerHudState) => void;
   onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
   onCameraDistanceChange: (distanceDeltaMeters: number) => void;
 }
 
-export function GameCanvas({
+function isPerformanceModeEnabled(): boolean {
+  return (
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).get("perf") === "1"
+  );
+}
+
+function GameCanvasComponent({
   cameraSettings,
   combatSettings,
   debugVisible,
   playerName,
+  quality,
   onDebugStatsChange,
   onPlayerHudChange,
   onTestDummyHudChange,
   onCameraDistanceChange,
 }: GameCanvasProps) {
-  const [isTestDummySelected, setIsTestDummySelected] = useState(false);
-  const [isTestDummyPursuitActive, setIsTestDummyPursuitActive] =
-    useState(false);
-  const testDummyRef = useRef<Group>(null);
-  const [testDummySnapshot, setTestDummySnapshot] = useState(() =>
-    createInitialTestDummySnapshot(TEST_DUMMY),
+  const [performanceMode] = useState(isPerformanceModeEnabled);
+  const [simulation] = useState(
+    () =>
+      new GameSimulation({
+        initialTimeMs: performance.now(),
+        wallClockOriginMs: Date.now(),
+        playerName,
+        combatSettings,
+        performanceLoadEnabled: performanceMode,
+      }),
   );
-  const testDummySnapshotRef = useRef(testDummySnapshot);
-  const isTestDummySelectedRef = useRef(false);
+  const [overheadRegistry] = useState(() => new OverheadStatusRegistry(128));
+  const [isTestDummySelected, setIsTestDummySelected] = useState(false);
+  const testDummyRef = useRef<TestDummyHandle>(null);
+  const performanceLoadRef = useRef<PerformanceLoadScenarioHandle>(null);
 
   const handleTestDummyActivate = useCallback((): void => {
-    isTestDummySelectedRef.current = true;
-    setIsTestDummySelected(true);
-    setIsTestDummyPursuitActive(true);
-    onTestDummyHudChange(testDummySnapshotRef.current);
-  }, [onTestDummyHudChange]);
+    simulation.enqueueCommand({ type: "activate-target" });
+  }, [simulation]);
 
-  const handleTestDummyPursuitChange = useCallback((isActive: boolean): void => {
-    setIsTestDummyPursuitActive(isActive);
+  const handleTargetSelectionChange = useCallback((selected: boolean): void => {
+    setIsTestDummySelected(selected);
   }, []);
 
-  const handleTestDummySnapshotChange = useCallback(
-    (snapshot: TestDummySnapshot): void => {
-      testDummySnapshotRef.current = snapshot;
-      setTestDummySnapshot(snapshot);
-
-      if (isTestDummySelectedRef.current) {
-        onTestDummyHudChange(snapshot);
-      }
-    },
-    [onTestDummyHudChange],
-  );
-
-  const handleTestDummyDeselected = useCallback((): void => {
-    isTestDummySelectedRef.current = false;
-    setIsTestDummySelected(false);
-    setIsTestDummyPursuitActive(false);
-    onTestDummyHudChange(null);
-  }, [onTestDummyHudChange]);
+  const shadowMapSize = quality.shadowMapSize || 512;
 
   return (
     <div className={styles.container}>
       <Canvas
+        key={quality.antialias ? "renderer-antialias" : "renderer-no-antialias"}
         camera={{ position: [7, 9, 7], fov: 46, near: 0.1, far: 160 }}
-        dpr={[1, 1.75]}
-        shadows
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        dpr={quality.initialDpr}
+        shadows={quality.shadows}
+        gl={{
+          antialias: quality.antialias,
+          powerPreference: "high-performance",
+        }}
       >
         <color attach="background" args={["#101722"]} />
         <fog attach="fog" args={["#101722", 42, 105]} />
@@ -91,8 +104,8 @@ export function GameCanvas({
           position={[7, 12, 5]}
           intensity={2.1}
           color="#f2d7ad"
-          castShadow
-          shadow-mapSize={[1024, 1024]}
+          castShadow={quality.shadows}
+          shadow-mapSize={[shadowMapSize, shadowMapSize]}
           shadow-camera-left={-15}
           shadow-camera-right={15}
           shadow-camera-top={15}
@@ -102,27 +115,38 @@ export function GameCanvas({
         <TestDummy
           ref={testDummyRef}
           definition={TEST_DUMMY}
-          snapshot={testDummySnapshot}
           selected={isTestDummySelected}
           onActivate={handleTestDummyActivate}
+          registry={overheadRegistry}
         />
+        {performanceMode ? (
+          <PerformanceLoadScenario
+            ref={performanceLoadRef}
+            registry={overheadRegistry}
+            visibleCount={PERFORMANCE_LOAD_VISIBLE_ENTITIES}
+          />
+        ) : null}
         <PlayerController
           cameraSettings={cameraSettings}
           combatSettings={combatSettings}
           debugVisible={debugVisible}
           playerName={playerName}
+          simulation={simulation}
+          overheadRegistry={overheadRegistry}
+          testDummyRef={testDummyRef}
+          performanceLoadRef={performanceLoadRef}
+          performanceMode={performanceMode}
+          quality={quality}
           onDebugStatsChange={onDebugStatsChange}
           onPlayerHudChange={onPlayerHudChange}
-          selectedTarget={isTestDummySelected ? TEST_DUMMY : null}
-          isTargetPursuitActive={isTestDummyPursuitActive}
-          targetObject={testDummyRef}
-          onTestDummySnapshotChange={handleTestDummySnapshotChange}
-          onTargetActivated={handleTestDummyActivate}
-          onTargetPursuitChange={handleTestDummyPursuitChange}
-          onTargetDeselected={handleTestDummyDeselected}
+          onTestDummyHudChange={onTestDummyHudChange}
+          onTargetSelectionChange={handleTargetSelectionChange}
           onCameraDistanceChange={onCameraDistanceChange}
         />
+        <OverheadStatusLayer registry={overheadRegistry} />
       </Canvas>
     </div>
   );
 }
+
+export const GameCanvas = memo(GameCanvasComponent);

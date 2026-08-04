@@ -1,5 +1,9 @@
 import type { GroundPoint, ObstacleDefinition } from "./types";
 
+export interface PositionBlocker {
+  isPositionBlocked(position: GroundPoint, radiusMeters: number): boolean;
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(value, maximum));
 }

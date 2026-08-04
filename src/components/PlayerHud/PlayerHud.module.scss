@@ -12,7 +12,14 @@
   border: $border-width-default solid $border-color-default;
   border-radius: $border-radius-md;
   box-shadow: $shadow-md;
+}
+
+.blurred {
   backdrop-filter: blur(12px);
+}
+
+.solid {
+  background: rgb(16 23 34 / 96%);
 }
 
 .eyebrow,

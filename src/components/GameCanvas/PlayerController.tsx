@@ -1,14 +1,24 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type RefObject,
+} from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { usePublishDamageLog } from "@/contexts/GameLogContext";
 import {
-  OverheadStatus,
-  type OverheadStatusHandle,
-} from "@/components/OverheadStatus/OverheadStatus";
+  type OverheadStatusRegistration,
+  type OverheadStatusUpdate,
+  OverheadStatusRegistry,
+} from "@/components/OverheadStatus/OverheadStatusSystem";
+import type { PerformanceLoadScenarioHandle } from "@/components/PerformanceLoadScenario/PerformanceLoadScenario";
+import type { TestDummyHandle } from "@/components/TestDummy/TestDummy";
 import {
   BufferAttribute,
   BufferGeometry,
   Group,
+  type Intersection,
   LineSegments,
   Mesh,
   Plane,
@@ -16,121 +26,95 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import {
-  BURNING_TILE,
-  CAMERA_DAMPING,
-  MAX_FRAME_DELTA_SECONDS,
-  OBSTACLES,
-  PLAYER_AUTO_ATTACK_RANGE_METERS,
-  PLAYER_RADIUS_METERS,
-  ROTATION_DAMPING,
-  TARGET_DESELECT_DISTANCE_METERS,
-  TEST_DUMMY,
-} from "@/game/constants";
+import { CAMERA_DAMPING, HOLD_DELAY_MS, TEST_DUMMY } from "@/game/constants";
 import {
   calculateCameraOffset,
   CAMERA_TARGET_HEIGHT,
   CAMERA_WHEEL_ZOOM_STEP_METERS,
   type CameraSettings,
 } from "@/game/camera";
-import { MovementController } from "@/game/MovementController";
-import { PlayerVitalityController } from "@/game/combat";
 import {
-  BurningHazardController,
-  circleIntersectsGroundHazard,
-} from "@/game/hazards";
+  GameSimulation,
+  GameUiSnapshotMask,
+  UI_PUBLISH_INTERVAL_MS,
+  type GameEvent,
+} from "@/game/GameSimulation";
 import { isEditableEventTarget } from "@/game/keybindings";
+import type { PlayerDebugStats } from "@/game/playerStats";
+import { PerformanceBenchmark } from "@/game/performanceBenchmark";
+import { resolvePointerFacingYaw } from "@/game/playerOrientation";
+import { UiPublishGate } from "@/game/uiPublishGate";
 import {
-  getActivePlayerEffects,
-  getCurrentPlayerSpeedMetersPerSecond,
-  SpeedBoostController,
-  type PlayerDebugStats,
-} from "@/game/playerStats";
+  isGroundProjectionActive,
+  isHeldGroundProjectionActive,
+} from "@/game/pointerProjection";
 import {
-  AutoAttackController,
-  TestDummyController,
-  isWithinAutoAttackRange,
-} from "@/game/testDummy";
+  AdaptiveDprController,
+  type ResolvedGraphicsQuality,
+} from "@/game/graphicsQuality";
 import type {
   GroundPoint,
   PlayerCombatSettings,
   PlayerHudState,
-  TestDummyDefinition,
   TestDummySnapshot,
 } from "@/game/types";
 
 const cameraTarget = new Vector3();
 const desiredCameraPosition = new Vector3();
-const DEBUG_SAMPLE_INTERVAL_MS = 100;
-const DEATH_NOTICE_DURATION_MS = 3_000;
+const interpolatedPlayerPosition = { x: 0, z: 0 };
+const PLAYER_OVERHEAD_Y = 2.38;
+
+interface PerformanceWithMemory extends Performance {
+  memory?: {
+    usedJSHeapSize: number;
+  };
+}
+
+function getUsedHeapBytes(): number | undefined {
+  return (performance as PerformanceWithMemory).memory?.usedJSHeapSize;
+}
 
 interface PlayerControllerProps {
   cameraSettings: CameraSettings;
   combatSettings: PlayerCombatSettings;
   debugVisible: boolean;
   playerName: string;
+  simulation: GameSimulation;
+  overheadRegistry: OverheadStatusRegistry;
+  testDummyRef: RefObject<TestDummyHandle | null>;
+  performanceLoadRef: RefObject<PerformanceLoadScenarioHandle | null>;
+  performanceMode: boolean;
+  quality: ResolvedGraphicsQuality;
   onDebugStatsChange: (stats: PlayerDebugStats) => void;
   onPlayerHudChange: (state: PlayerHudState) => void;
-  selectedTarget: TestDummyDefinition | null;
-  isTargetPursuitActive: boolean;
-  targetObject: RefObject<Group | null>;
-  onTestDummySnapshotChange: (snapshot: TestDummySnapshot) => void;
-  onTargetActivated: () => void;
-  onTargetPursuitChange: (isActive: boolean) => void;
-  onTargetDeselected: () => void;
+  onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
+  onTargetSelectionChange: (selected: boolean) => void;
   onCameraDistanceChange: (distanceDeltaMeters: number) => void;
 }
 
-function areEffectsEqual(
-  previousEffects: PlayerHudState["activeEffects"],
-  nextEffects: PlayerHudState["activeEffects"],
-): boolean {
-  return (
-    previousEffects.length === nextEffects.length &&
-    previousEffects.every((effect, index) => effect.id === nextEffects[index]?.id)
-  );
-}
+function writePathIfChanged(
+  positions: Float32Array,
+  previous: Float32Array,
+  geometry: BufferGeometry | null,
+): void {
+  let changed = false;
 
-function arePlayerHudStatesEqual(
-  previous: PlayerHudState | null,
-  next: PlayerHudState,
-): boolean {
-  return (
-    previous !== null &&
-    previous.currentHealth === next.currentHealth &&
-    previous.maximumHealth === next.maximumHealth &&
-    previous.defensePercent === next.defensePercent &&
-    previous.isDeathNoticeVisible === next.isDeathNoticeVisible &&
-    areEffectsEqual(previous.activeEffects, next.activeEffects)
-  );
-}
+  for (let index = 0; index < positions.length; index += 1) {
+    if (positions[index] !== previous[index]) {
+      previous[index] = positions[index];
+      changed = true;
+    }
+  }
 
-function areTestDummySnapshotsEqual(
-  previous: TestDummySnapshot | null,
-  next: TestDummySnapshot,
-): boolean {
-  return (
-    previous !== null &&
-    previous.currentHealth === next.currentHealth &&
-    previous.lastDamageReceived === next.lastDamageReceived &&
-    previous.totalDamageReceived === next.totalDamageReceived &&
-    previous.damagePerSecond === next.damagePerSecond &&
-    previous.isDefeated === next.isDefeated &&
-    previous.respawnRemainingSeconds === next.respawnRemainingSeconds
-  );
-}
+  if (!changed || !geometry) {
+    return;
+  }
 
-function dampAngle(
-  current: number,
-  target: number,
-  damping: number,
-  delta: number,
-): number {
-  const difference = Math.atan2(
-    Math.sin(target - current),
-    Math.cos(target - current),
-  );
-  return current + difference * (1 - Math.exp(-damping * delta));
+  const positionAttribute = geometry.getAttribute("position");
+
+  if (positionAttribute instanceof BufferAttribute) {
+    positionAttribute.needsUpdate = true;
+  }
 }
 
 export function PlayerController({
@@ -138,15 +122,16 @@ export function PlayerController({
   combatSettings,
   debugVisible,
   playerName,
+  simulation,
+  overheadRegistry,
+  testDummyRef,
+  performanceLoadRef,
+  performanceMode,
+  quality,
   onDebugStatsChange,
   onPlayerHudChange,
-  selectedTarget,
-  isTargetPursuitActive,
-  targetObject,
-  onTestDummySnapshotChange,
-  onTargetActivated,
-  onTargetPursuitChange,
-  onTargetDeselected,
+  onTestDummyHudChange,
+  onTargetSelectionChange,
   onCameraDistanceChange,
 }: PlayerControllerProps) {
   const groupRef = useRef<Group>(null);
@@ -156,64 +141,105 @@ export function PlayerController({
   const selectedPathLineRef = useRef<LineSegments>(null);
   const selectedPathGeometryRef = useRef<BufferGeometry>(null);
   const destinationMarkerRef = useRef<Mesh>(null);
-  const overheadStatusRef = useRef<OverheadStatusHandle>(null);
   const pointerNdc = useRef(new Vector2());
   const pointerId = useRef<number | null>(null);
-  const lastDebugSampleAtMs = useRef<number | null>(null);
-  const wasDebugVisible = useRef(false);
-  const previousCombatSettings = useRef(combatSettings);
-  const lastPlayerHudState = useRef<PlayerHudState | null>(null);
-  const lastTestDummySnapshot = useRef<TestDummySnapshot | null>(null);
-  const lastTestDummySampleAtMs = useRef<number | null>(null);
-  const deathNoticeUntilMs = useRef(0);
-  const controller = useMemo(() => new MovementController(), []);
-  const speedBoostController = useMemo(() => new SpeedBoostController(), []);
-  const vitalityController = useMemo(() => new PlayerVitalityController(), []);
-  const burningHazardController = useMemo(
-    () => new BurningHazardController(),
-    [],
-  );
-  const testDummyController = useMemo(
-    () => new TestDummyController(TEST_DUMMY),
-    [],
-  );
-  const autoAttackController = useMemo(() => new AutoAttackController(), []);
+  const rightPressStartedAt = useRef<number | null>(null);
   const raycaster = useMemo(() => new Raycaster(), []);
-  const groundPlane = useMemo(() => new Plane(new Vector3(0, 1, 0), 0), []);
+  const groundPlane = useMemo(
+    () => new Plane(new Vector3(0, 1, 0), 0),
+    [],
+  );
   const rayIntersection = useMemo(() => new Vector3(), []);
+  const targetIntersections = useRef<Intersection[]>([]);
+  const raycastMetrics = useRef({ ground: 0, target: 0 });
+  const pointerGroundCommand = useRef<{
+    type: "update-pointer-ground";
+    point: GroundPoint;
+  }>({
+    type: "update-pointer-ground",
+    point: { x: 0, z: 0 },
+  });
+  const playerRegistrationRef =
+    useRef<OverheadStatusRegistration | null>(null);
+  const playerOverheadUpdate = useRef<OverheadStatusUpdate>({
+    x: 0,
+    y: PLAYER_OVERHEAD_Y,
+    z: 0,
+    currentHealth: 0,
+    maximumHealth: 1,
+    healthColor: "#74d641",
+    effects: [],
+  });
+  const uiPublishGate = useMemo(
+    () => new UiPublishGate(UI_PUBLISH_INTERVAL_MS),
+    [],
+  );
+  const lastDummyHealthRef = useRef(Number.NaN);
+  const lastDummyDefeatedRef = useRef<boolean | null>(null);
   const pathPositions = useMemo(() => new Float32Array(6), []);
   const selectedPathPositions = useMemo(() => new Float32Array(6), []);
+  const previousPathPositions = useMemo(
+    () => new Float32Array(6).fill(Number.NaN),
+    [],
+  );
+  const previousSelectedPathPositions = useMemo(
+    () => new Float32Array(6).fill(Number.NaN),
+    [],
+  );
   const cameraOffset = useMemo(() => {
     const offset = calculateCameraOffset(cameraSettings);
     return new Vector3(offset.x, offset.y, offset.z);
   }, [cameraSettings.distance, cameraSettings.pitchDegrees]);
-  const { camera, gl } = useThree();
+  const performanceBenchmark = useMemo(
+    () => (performanceMode ? new PerformanceBenchmark() : null),
+    [performanceMode],
+  );
+  const adaptiveDprController = useMemo(
+    () =>
+      new AdaptiveDprController(quality.minimumDpr, quality.maximumDpr),
+    [quality.maximumDpr, quality.minimumDpr],
+  );
+  const { camera, gl, setDpr } = useThree();
 
   useEffect(() => {
-    const snapshot = controller.getSnapshot();
+    adaptiveDprController.reset();
+    setDpr(quality.initialDpr);
+  }, [adaptiveDprController, quality.initialDpr, setDpr]);
+
+  useEffect(() => {
+    const registration = overheadRegistry.register("local-player");
+    playerRegistrationRef.current = registration;
+
+    return () => {
+      overheadRegistry.unregister(registration);
+      playerRegistrationRef.current = null;
+    };
+  }, [overheadRegistry]);
+
+  useEffect(() => {
+    const state = simulation.getRenderState();
     camera.position.set(
-      snapshot.position.x + cameraOffset.x,
+      state.currentPlayerPosition.x + cameraOffset.x,
       cameraOffset.y,
-      snapshot.position.z + cameraOffset.z,
+      state.currentPlayerPosition.z + cameraOffset.z,
     );
     camera.lookAt(
-      snapshot.position.x,
+      state.currentPlayerPosition.x,
       CAMERA_TARGET_HEIGHT,
-      snapshot.position.z,
+      state.currentPlayerPosition.z,
     );
-  }, [camera, cameraOffset, controller]);
+  }, [camera, cameraOffset, simulation]);
 
   useEffect(() => {
-    if (selectedTarget && isTargetPursuitActive) {
-      controller.resumeFollowTarget(
-        { x: selectedTarget.xMeters, z: selectedTarget.zMeters },
-        PLAYER_AUTO_ATTACK_RANGE_METERS,
-      );
-      return;
-    }
+    simulation.enqueueCommand({
+      type: "update-combat-settings",
+      settings: combatSettings,
+    });
+  }, [combatSettings, simulation]);
 
-    controller.pauseFollowTarget();
-  }, [controller, isTargetPursuitActive, selectedTarget]);
+  useEffect(() => {
+    simulation.enqueueCommand({ type: "update-player-name", playerName });
+  }, [playerName, simulation]);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -228,19 +254,38 @@ export function PlayerController({
 
     const projectPointer = (): GroundPoint | null => {
       raycaster.setFromCamera(pointerNdc.current, camera);
+      raycastMetrics.current.ground += 1;
       const hit = raycaster.ray.intersectPlane(groundPlane, rayIntersection);
       return hit ? { x: hit.x, z: hit.z } : null;
     };
 
+    const applyPointerFacing = (point: GroundPoint): void => {
+      const group = groupRef.current;
+
+      if (!group) {
+        return;
+      }
+
+      group.rotation.y = resolvePointerFacingYaw(
+        group.rotation.y,
+        true,
+        group.position,
+        point,
+      );
+    };
+
     const isPointerOnTestDummy = (): boolean => {
-      const target = targetObject.current;
+      const target = testDummyRef.current?.objectRef.current;
 
       if (!target) {
         return false;
       }
 
+      targetIntersections.current.length = 0;
       raycaster.setFromCamera(pointerNdc.current, camera);
-      return raycaster.intersectObject(target, true).length > 0;
+      raycastMetrics.current.target += 1;
+      raycaster.intersectObject(target, true, targetIntersections.current);
+      return targetIntersections.current.length > 0;
     };
 
     const handlePointerDown = (event: PointerEvent): void => {
@@ -252,12 +297,7 @@ export function PlayerController({
       updatePointer(event);
 
       if (isPointerOnTestDummy()) {
-        const target = selectedTarget ?? TEST_DUMMY;
-        controller.resumeFollowTarget(
-          { x: target.xMeters, z: target.zMeters },
-          PLAYER_AUTO_ATTACK_RANGE_METERS,
-        );
-        onTargetActivated();
+        simulation.enqueueCommand({ type: "activate-target" });
         return;
       }
 
@@ -267,14 +307,23 @@ export function PlayerController({
         return;
       }
 
-      controller.pauseFollowTarget();
-      onTargetPursuitChange(false);
       pointerId.current = event.pointerId;
       canvas.setPointerCapture(event.pointerId);
-      controller.beginRightPress(point, performance.now());
+      const timestampMs = performance.now();
+      rightPressStartedAt.current = timestampMs;
+      applyPointerFacing(point);
+      simulation.enqueueCommand({
+        type: "begin-right-press",
+        point,
+        timestampMs,
+      });
     };
 
     const handlePointerMove = (event: PointerEvent): void => {
+      if (pointerId.current !== event.pointerId) {
+        return;
+      }
+
       updatePointer(event);
     };
 
@@ -283,13 +332,24 @@ export function PlayerController({
         return;
       }
 
-      controller.endRightPress(performance.now());
+      updatePointer(event);
+      const finalPoint = projectPointer();
+
+      if (finalPoint) {
+        applyPointerFacing(finalPoint);
+      }
+
+      simulation.enqueueCommand({
+        type: "end-right-press",
+        timestampMs: performance.now(),
+      });
 
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
 
       pointerId.current = null;
+      rightPressStartedAt.current = null;
     };
 
     const handleContextMenu = (event: MouseEvent): void => {
@@ -308,8 +368,19 @@ export function PlayerController({
     };
 
     const cancelInput = (): void => {
-      controller.cancelInput();
+      const activePointerId = pointerId.current;
+
+      if (
+        activePointerId !== null &&
+        canvas.hasPointerCapture(activePointerId)
+      ) {
+        canvas.releasePointerCapture(activePointerId);
+      }
+
       pointerId.current = null;
+      rightPressStartedAt.current = null;
+      simulation.enqueueCommand({ type: "cancel-input" });
+      simulation.resetFrameAccumulator();
     };
 
     const handleVisibilityChange = (): void => {
@@ -337,16 +408,13 @@ export function PlayerController({
     };
   }, [
     camera,
-    controller,
     gl,
     groundPlane,
-    onTargetActivated,
     onCameraDistanceChange,
-    onTargetPursuitChange,
     rayIntersection,
     raycaster,
-    selectedTarget,
-    targetObject,
+    simulation,
+    testDummyRef,
   ]);
 
   useEffect(() => {
@@ -359,292 +427,229 @@ export function PlayerController({
         return;
       }
 
-      speedBoostController.activate(performance.now());
+      simulation.enqueueCommand({ type: "activate-speed-boost" });
     };
 
     window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [simulation]);
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [speedBoostController]);
+  const visitEvent = useCallback(
+    (event: GameEvent): void => {
+      if (event.type === "damage") {
+        publishDamage(event.payload);
+        return;
+      }
 
-  useFrame((_, delta) => {
+      if (event.type === "target-selected") {
+        onTargetSelectionChange(true);
+        return;
+      }
+
+      if (event.type === "target-deselected") {
+        onTargetSelectionChange(false);
+        onTestDummyHudChange(null);
+      }
+    },
+    [onTargetSelectionChange, onTestDummyHudChange, publishDamage],
+  );
+
+  useFrame((frameState, delta) => {
     const group = groupRef.current;
 
     if (!group) {
       return;
     }
 
-    raycaster.setFromCamera(pointerNdc.current, camera);
-    const pointerHit = raycaster.ray.intersectPlane(groundPlane, rayIntersection);
+    let hasPointerGroundHit = false;
 
-    if (pointerHit) {
-      controller.updatePointerGround({ x: pointerHit.x, z: pointerHit.z });
-    }
+    if (isGroundProjectionActive(pointerId.current)) {
+      raycaster.setFromCamera(pointerNdc.current, camera);
+      raycastMetrics.current.ground += 1;
+      const hit = raycaster.ray.intersectPlane(groundPlane, rayIntersection);
 
-    const timestampMs = performance.now();
-    const speedBoost = speedBoostController.getSnapshot(timestampMs);
-    const currentSpeedMetersPerSecond =
-      getCurrentPlayerSpeedMetersPerSecond(speedBoost);
-    const snapshot = controller.step(
-      delta,
-      timestampMs,
-      OBSTACLES,
-      currentSpeedMetersPerSecond,
-    );
-    group.position.set(snapshot.position.x, 0.9, snapshot.position.z);
-
-    const dummyStep = testDummyController.step(delta, timestampMs);
-    let dummySnapshot = dummyStep.snapshot;
-    let activeTarget = selectedTarget;
-
-    if (activeTarget) {
-      const targetPosition = {
-        x: activeTarget.xMeters,
-        z: activeTarget.zMeters,
-      };
-      const targetDistanceMeters = Math.hypot(
-        snapshot.position.x - targetPosition.x,
-        snapshot.position.z - targetPosition.z,
-      );
-
-      if (targetDistanceMeters >= TARGET_DESELECT_DISTANCE_METERS) {
-        controller.clearFollowTarget();
-        activeTarget = null;
-        onTargetDeselected();
+      if (hit) {
+        hasPointerGroundHit = true;
+        pointerGroundCommand.current.point.x = hit.x;
+        pointerGroundCommand.current.point.z = hit.z;
+        simulation.enqueueCommand(pointerGroundCommand.current);
       }
     }
 
-    let didDummyStateChange = dummyStep.didRespawn;
-
-    if (activeTarget) {
-      const targetPosition = {
-        x: activeTarget.xMeters,
-        z: activeTarget.zMeters,
-      };
-      const attacks = autoAttackController.step(
-        delta,
-        !dummySnapshot.isDefeated &&
-          isWithinAutoAttackRange(snapshot.position, targetPosition),
-      );
-
-      for (let attack = 0; attack < attacks; attack += 1) {
-        const damageResult = testDummyController.applyDamage(
-          autoAttackController.getDamagePerAttack(),
-          timestampMs,
-        );
-        didDummyStateChange ||= damageResult.didApplyDamage;
-        dummySnapshot = damageResult.snapshot;
-
-        if (damageResult.appliedDamage > 0) {
-          publishDamage({
-            occurredAtMs: Date.now(),
-            appliedDamage: damageResult.appliedDamage,
-            receiver: {
-              id: TEST_DUMMY.id,
-              kind: "test-dummy",
-              displayName: TEST_DUMMY.displayName,
-            },
-            source: {
-              id: "local-player",
-              kind: "player",
-              displayName: playerName,
-            },
-          });
-        }
-      }
-    } else {
-      autoAttackController.step(0, false);
-    }
-
-    const isTestDummySnapshotChanged = !areTestDummySnapshotsEqual(
-      lastTestDummySnapshot.current,
-      dummySnapshot,
-    );
-    const isTestDummySampleDue =
-      lastTestDummySampleAtMs.current === null ||
-      timestampMs - lastTestDummySampleAtMs.current >= DEBUG_SAMPLE_INTERVAL_MS;
-
-    if (
-      didDummyStateChange ||
-      (activeTarget !== null &&
-        isTestDummySnapshotChanged &&
-        isTestDummySampleDue)
-    ) {
-      onTestDummySnapshotChange(dummySnapshot);
-      lastTestDummySnapshot.current = dummySnapshot;
-      lastTestDummySampleAtMs.current = timestampMs;
-    }
-
-    if (
-      previousCombatSettings.current.maximumHealth !==
-        combatSettings.maximumHealth ||
-      previousCombatSettings.current.defensePercent !==
-        combatSettings.defensePercent
-    ) {
-      vitalityController.updateSettings(combatSettings);
-      previousCombatSettings.current = combatSettings;
-    }
-
-    const isInsideBurningTile = circleIntersectsGroundHazard(
-      snapshot.position,
-      PLAYER_RADIUS_METERS,
-      BURNING_TILE,
-    );
-    const burningHazard = burningHazardController.step(
-      Math.min(Math.max(delta, 0), MAX_FRAME_DELTA_SECONDS),
-      isInsideBurningTile,
-      BURNING_TILE.tickIntervalSeconds,
+    const interpolationAlpha = simulation.advanceFrame(delta);
+    const state = simulation.getRenderState();
+    interpolatedPlayerPosition.x =
+      state.previousPlayerPosition.x +
+      (state.currentPlayerPosition.x - state.previousPlayerPosition.x) *
+        interpolationAlpha;
+    interpolatedPlayerPosition.z =
+      state.previousPlayerPosition.z +
+      (state.currentPlayerPosition.z - state.previousPlayerPosition.z) *
+        interpolationAlpha;
+    group.position.set(
+      interpolatedPlayerPosition.x,
+      0.9,
+      interpolatedPlayerPosition.z,
     );
 
-    for (let tick = 0; tick < burningHazard.damageTicks; tick += 1) {
-      const damageResult = vitalityController.applyDamage(
-        BURNING_TILE.damagePerTick,
-      );
-
-      if (damageResult.appliedDamage > 0) {
-        publishDamage({
-          occurredAtMs: Date.now(),
-          appliedDamage: damageResult.appliedDamage,
-          receiver: {
-            id: "local-player",
-            kind: "player",
-            displayName: playerName,
-          },
-          source: {
-            id: BURNING_TILE.id,
-            kind: "entity",
-            displayName: BURNING_TILE.displayName,
-          },
-        });
-      }
-
-      if (damageResult.didDie) {
-        deathNoticeUntilMs.current = timestampMs + DEATH_NOTICE_DURATION_MS;
-      }
-    }
-
-    const combatSnapshot = vitalityController.getSnapshot();
-    const activeEffects = getActivePlayerEffects(
-      speedBoost,
-      burningHazard.isActive,
-    );
-    const playerHudState: PlayerHudState = {
-      ...combatSnapshot,
-      activeEffects,
-      isDeathNoticeVisible: timestampMs < deathNoticeUntilMs.current,
-    };
-
-    overheadStatusRef.current?.update({
-      ...combatSnapshot,
-      effects: activeEffects,
-    });
-
-    if (!arePlayerHudStatesEqual(lastPlayerHudState.current, playerHudState)) {
-      onPlayerHudChange(playerHudState);
-      lastPlayerHudState.current = playerHudState;
-    }
-
-    const targetRotation = Math.atan2(snapshot.facing.x, snapshot.facing.z);
-    group.rotation.y = dampAngle(
+    group.rotation.y = resolvePointerFacingYaw(
       group.rotation.y,
-      targetRotation,
-      ROTATION_DAMPING,
-      delta,
+      hasPointerGroundHit,
+      interpolatedPlayerPosition,
+      pointerGroundCommand.current.point,
     );
 
     desiredCameraPosition
-      .set(snapshot.position.x, 0, snapshot.position.z)
+      .set(interpolatedPlayerPosition.x, 0, interpolatedPlayerPosition.z)
       .add(cameraOffset);
     const cameraBlend = 1 - Math.exp(-CAMERA_DAMPING * delta);
     camera.position.lerp(desiredCameraPosition, cameraBlend);
     cameraTarget.set(
-      snapshot.position.x,
+      interpolatedPlayerPosition.x,
       CAMERA_TARGET_HEIGHT,
-      snapshot.position.z,
+      interpolatedPlayerPosition.z,
     );
     camera.lookAt(cameraTarget);
 
-    const showPath =
+    const playerRegistration = playerRegistrationRef.current;
+
+    if (playerRegistration) {
+      const overheadUpdate = playerOverheadUpdate.current;
+      overheadUpdate.x = interpolatedPlayerPosition.x;
+      overheadUpdate.z = interpolatedPlayerPosition.z;
+      overheadUpdate.currentHealth = state.playerCombat.currentHealth;
+      overheadUpdate.maximumHealth = state.playerCombat.maximumHealth;
+      overheadUpdate.effects = state.playerEffects;
+      overheadRegistry.update(playerRegistration, overheadUpdate);
+    }
+
+    if (
+      state.testDummy.currentHealth !== lastDummyHealthRef.current ||
+      state.testDummy.isDefeated !== lastDummyDefeatedRef.current
+    ) {
+      testDummyRef.current?.update(state.testDummy);
+      lastDummyHealthRef.current = state.testDummy.currentHealth;
+      lastDummyDefeatedRef.current = state.testDummy.isDefeated;
+    }
+
+    if (state.performanceLoad) {
+      performanceLoadRef.current?.update(
+        state.performanceLoad,
+        interpolationAlpha,
+      );
+    }
+
+    simulation.drainEvents(visitEvent);
+    const timestampMs = performance.now();
+    const criticalUiChange = simulation.consumeCriticalUiDirty();
+    if (uiPublishGate.shouldPublish(timestampMs, criticalUiChange)) {
+      const mask = debugVisible
+        ? GameUiSnapshotMask.All
+        : GameUiSnapshotMask.Player | GameUiSnapshotMask.Target;
+      const snapshot = simulation.createUiSnapshot(mask);
+      onPlayerHudChange(snapshot.playerHud);
+      if (snapshot.targetSelected) {
+        onTestDummyHudChange(snapshot.testDummy);
+      }
+
+      if (debugVisible) {
+        onDebugStatsChange(snapshot.debug);
+      }
+
+    }
+
+    const showClickPath =
       debugVisible &&
-      snapshot.mode === "clickToPoint" &&
-      snapshot.isClickTargetConfirmed &&
-      snapshot.target !== null;
+      state.movement.mode === "clickToPoint" &&
+      state.movement.isClickTargetConfirmed &&
+      state.movement.target !== null;
+    const showHeldDirection =
+      debugVisible &&
+      isHeldGroundProjectionActive(
+        pointerId.current,
+        rightPressStartedAt.current,
+        timestampMs,
+        HOLD_DELAY_MS,
+      );
+    const showPath = showClickPath || showHeldDirection;
+    const pathTarget = showHeldDirection
+      ? pointerGroundCommand.current.point
+      : state.movement.target;
 
     if (pathLineRef.current) {
       pathLineRef.current.visible = showPath;
     }
 
     if (destinationMarkerRef.current) {
-      destinationMarkerRef.current.visible = showPath;
+      destinationMarkerRef.current.visible = showClickPath;
     }
 
-    if (showPath && snapshot.target && pathGeometryRef.current) {
-      pathPositions[0] = snapshot.position.x;
+    if (showPath && pathTarget) {
+      pathPositions[0] = interpolatedPlayerPosition.x;
       pathPositions[1] = 0.07;
-      pathPositions[2] = snapshot.position.z;
-      pathPositions[3] = snapshot.target.x;
+      pathPositions[2] = interpolatedPlayerPosition.z;
+      pathPositions[3] = pathTarget.x;
       pathPositions[4] = 0.07;
-      pathPositions[5] = snapshot.target.z;
-
-      const positionAttribute = pathGeometryRef.current.getAttribute("position");
-
-      if (positionAttribute instanceof BufferAttribute) {
-        positionAttribute.needsUpdate = true;
-      }
-
-      destinationMarkerRef.current?.position.set(
-        snapshot.target.x,
-        0.075,
-        snapshot.target.z,
+      pathPositions[5] = pathTarget.z;
+      writePathIfChanged(
+        pathPositions,
+        previousPathPositions,
+        pathGeometryRef.current,
       );
-    }
 
-    const showSelectedPath = activeTarget !== null;
+      if (showClickPath) {
+        destinationMarkerRef.current?.position.set(
+          pathTarget.x,
+          0.075,
+          pathTarget.z,
+        );
+      }
+    }
 
     if (selectedPathLineRef.current) {
-      selectedPathLineRef.current.visible = showSelectedPath;
+      selectedPathLineRef.current.visible = state.targetSelected;
     }
 
-    if (showSelectedPath && activeTarget && selectedPathGeometryRef.current) {
-      selectedPathPositions[0] = snapshot.position.x;
+    if (state.targetSelected) {
+      selectedPathPositions[0] = interpolatedPlayerPosition.x;
       selectedPathPositions[1] = 0.09;
-      selectedPathPositions[2] = snapshot.position.z;
-      selectedPathPositions[3] = activeTarget.xMeters;
+      selectedPathPositions[2] = interpolatedPlayerPosition.z;
+      selectedPathPositions[3] = TEST_DUMMY.xMeters;
       selectedPathPositions[4] = 0.09;
-      selectedPathPositions[5] = activeTarget.zMeters;
+      selectedPathPositions[5] = TEST_DUMMY.zMeters;
+      writePathIfChanged(
+        selectedPathPositions,
+        previousSelectedPathPositions,
+        selectedPathGeometryRef.current,
+      );
+    }
 
-      const positionAttribute = selectedPathGeometryRef.current.getAttribute(
-        "position",
+    overheadRegistry.flush();
+    const benchmarkReport = performanceBenchmark?.recordFrame(
+      delta * 1_000,
+      gl.info.render.calls,
+      timestampMs,
+      getUsedHeapBytes(),
+      raycastMetrics.current.ground,
+      raycastMetrics.current.target,
+    );
+
+    if (benchmarkReport) {
+      console.info("[Performance benchmark]", benchmarkReport);
+    }
+
+    if (quality.adaptiveDpr) {
+      const nextDpr = adaptiveDprController.recordFrame(
+        delta * 1_000,
+        timestampMs,
+        frameState.viewport.dpr,
       );
 
-      if (positionAttribute instanceof BufferAttribute) {
-        positionAttribute.needsUpdate = true;
+      if (nextDpr !== null) {
+        frameState.setDpr(nextDpr);
       }
     }
-
-    if (!debugVisible) {
-      wasDebugVisible.current = false;
-      return;
-    }
-
-    const isFirstVisibleSample = !wasDebugVisible.current;
-    const isSampleDue =
-      lastDebugSampleAtMs.current === null ||
-      timestampMs - lastDebugSampleAtMs.current >= DEBUG_SAMPLE_INTERVAL_MS;
-
-    if (isFirstVisibleSample || isSampleDue) {
-      onDebugStatsChange({
-        speedMetersPerSecond: snapshot.speedMetersPerSecond,
-        ...speedBoost,
-        ...combatSnapshot,
-      });
-      lastDebugSampleAtMs.current = timestampMs;
-    }
-
-    wasDebugVisible.current = true;
-  });
+  }, -100);
 
   return (
     <>
@@ -671,13 +676,6 @@ export function PlayerController({
           <ringGeometry args={[0.55, 0.67, 32]} />
           <meshBasicMaterial color="#d7a96b" transparent opacity={0.82} />
         </mesh>
-
-        <OverheadStatus
-          ref={overheadStatusRef}
-          position={[0, 1.48, 0]}
-          healthColor="#74d641"
-          showEffects
-        />
       </group>
 
       <lineSegments ref={pathLineRef} visible={false} frustumCulled={false}>

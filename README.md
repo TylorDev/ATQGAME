@@ -51,3 +51,23 @@ virtualiza y puede vaciarse con la acción `Limpiar` del encabezado.
 
 El nombre del jugador usado por los registros se configura en
 `Settings > Perfil local` y se guarda localmente.
+
+## Rendimiento
+
+`Settings > Calidad gráfica` ofrece los presets Bajo, Equilibrado y Alto. El
+preset Equilibrado es el predeterminado y ajusta el DPR automáticamente con
+histéresis; solo Alto mantiene el blur del HUD.
+
+En desarrollo, `http://localhost:5173/?perf=1` activa el escenario determinista
+de carga con 50 entidades simuladas y 100 visibles. Tras 10 s de calentamiento,
+registra durante 60 s los FPS, percentiles de frame y draw calls, y publica el
+resultado como `[Performance benchmark]` en la consola.
+
+## Prueba manual web: inversión del primer movimiento sostenido
+
+1. Ejecutar `npm run dev:web` y abrir la aplicación desde una recarga limpia.
+2. Activar `Modo debug` antes de realizar cualquier movimiento con RMB.
+3. Mantener RMB hacia una dirección hasta que el jugador comience a avanzar.
+4. Sin soltar RMB, mover inmediatamente el puntero 180 grados al lado contrario.
+5. Verificar que en el siguiente frame el jugador, su orientación y la línea de
+   debug cambien al sentido contrario, manteniendo `5.50 m/s` y sin una pausa.

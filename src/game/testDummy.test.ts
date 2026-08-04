@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AutoAttackController,
+  RollingDamageWindow,
   TestDummyController,
   TEST_DUMMY_RESPAWN_DURATION_SECONDS,
   isWithinAutoAttackRange,
@@ -16,6 +17,20 @@ const definition: TestDummyDefinition = {
 };
 
 describe("test dummy combat", () => {
+  it("maintains an incremental rolling sum through wrap-around and growth", () => {
+    const window = new RollingDamageWindow(1_000, 2);
+    window.push(10, 0);
+    window.push(20, 100);
+    window.push(30, 200);
+
+    expect(window.getCapacity()).toBe(4);
+    expect(window.getTotal(999)).toBe(60);
+    expect(window.getTotal(1_000)).toBe(50);
+    window.push(40, 1_100);
+    expect(window.getTotal(1_100)).toBe(70);
+    expect(window.getTotal(2_101)).toBe(0);
+  });
+
   it("accepts the inclusive one-meter auto-attack range", () => {
     expect(isWithinAutoAttackRange({ x: 0, z: 0 }, { x: 1, z: 0 })).toBe(true);
     expect(isWithinAutoAttackRange({ x: 0, z: 0 }, { x: 1.001, z: 0 })).toBe(false);
@@ -53,7 +68,7 @@ describe("test dummy combat", () => {
     const defeat = controller.applyDamage(100, 0);
     expect(defeat.appliedDamage).toBe(100);
     expect(defeat.didDefeat).toBe(true);
-    expect(defeat.snapshot).toMatchObject({
+    expect(controller.getSnapshot(0)).toMatchObject({
       currentHealth: 0,
       isDefeated: true,
       totalDamageReceived: 100,
@@ -61,12 +76,12 @@ describe("test dummy combat", () => {
     expect(controller.applyDamage(20, 100).didApplyDamage).toBe(false);
 
     const waiting = controller.step(TEST_DUMMY_RESPAWN_DURATION_SECONDS - 0.1, 2_900);
-    expect(waiting.didRespawn).toBe(false);
-    expect(waiting.snapshot.isDefeated).toBe(true);
+    expect(waiting).toBe(false);
+    expect(controller.getSnapshot(2_900).isDefeated).toBe(true);
 
     const respawned = controller.step(0.1, 3_000);
-    expect(respawned.didRespawn).toBe(true);
-    expect(respawned.snapshot).toMatchObject({
+    expect(respawned).toBe(true);
+    expect(controller.getSnapshot(3_000)).toMatchObject({
       currentHealth: 100,
       lastDamageReceived: 0,
       totalDamageReceived: 0,

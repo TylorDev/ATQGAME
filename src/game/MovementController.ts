@@ -7,8 +7,10 @@ import {
   PLAYER_BASE_SPEED_METERS_PER_SECOND,
   PLAYER_RADIUS_METERS,
 } from "./constants";
-import { isPositionBlocked } from "./collision";
-import { calculateGroundDistanceMeters } from "./distance";
+import {
+  isPositionBlocked,
+  type PositionBlocker,
+} from "./collision";
 import type {
   GroundPoint,
   MovementMode,
@@ -17,6 +19,9 @@ import type {
 } from "./types";
 
 type MovementIntent = Exclude<MovementMode, "blocked" | "followTarget">;
+export type MovementCollisionSource =
+  | readonly ObstacleDefinition[]
+  | PositionBlocker;
 
 interface MovementControllerOptions {
   initialPosition?: GroundPoint;
@@ -25,60 +30,119 @@ interface MovementControllerOptions {
   holdDelayMs?: number;
 }
 
-function copyPoint(point: GroundPoint): GroundPoint {
-  return { x: point.x, z: point.z };
+export interface MovementStateView {
+  mode: MovementMode;
+  readonly position: GroundPoint;
+  readonly facing: GroundPoint;
+  target: GroundPoint | null;
+  followTarget: GroundPoint | null;
+  isClickTargetConfirmed: boolean;
+  speedMetersPerSecond: number;
 }
 
-function directionBetween(from: GroundPoint, to: GroundPoint): GroundPoint {
-  const x = to.x - from.x;
-  const z = to.z - from.z;
-  const length = Math.hypot(x, z);
+function setPoint(target: GroundPoint, source: GroundPoint): void {
+  target.x = source.x;
+  target.z = source.z;
+}
 
-  if (length <= MIN_DIRECTION_LENGTH_METERS) {
-    return { x: 0, z: 0 };
+function writePoint(
+  target: GroundPoint | null,
+  source: GroundPoint | null,
+): GroundPoint | null {
+  if (!source) {
+    return null;
   }
 
-  return { x: x / length, z: z / length };
+  const output = target ?? { x: 0, z: 0 };
+  setPoint(output, source);
+  return output;
+}
+
+function isBlocked(
+  source: MovementCollisionSource,
+  position: GroundPoint,
+  radiusMeters: number,
+  arenaHalfSizeMeters: number,
+): boolean {
+  if ("isPositionBlocked" in source) {
+    return source.isPositionBlocked(position, radiusMeters);
+  }
+
+  return isPositionBlocked(
+    position,
+    radiusMeters,
+    source,
+    arenaHalfSizeMeters,
+  );
 }
 
 export class MovementController {
   private readonly radiusMeters: number;
   private readonly arenaHalfSizeMeters: number;
   private readonly holdDelayMs: number;
-  private position: GroundPoint;
-  private facing: GroundPoint = { x: 0, z: 1 };
+  private readonly position: GroundPoint = { x: 0, z: 0 };
+  private readonly facing: GroundPoint = { x: 0, z: 1 };
+  private readonly pointerGroundPoint: GroundPoint = { x: 0, z: 0 };
+  private readonly targetPoint: GroundPoint = { x: 0, z: 0 };
+  private readonly followTargetPoint: GroundPoint = { x: 0, z: 0 };
+  private readonly startingPosition: GroundPoint = { x: 0, z: 0 };
+  private readonly direction: GroundPoint = { x: 0, z: 0 };
+  private readonly candidate: GroundPoint = { x: 0, z: 0 };
+  private readonly state: MovementStateView = {
+    mode: "idle",
+    position: this.position,
+    facing: this.facing,
+    target: null,
+    followTarget: null,
+    isClickTargetConfirmed: false,
+    speedMetersPerSecond: 0,
+  };
   private intent: MovementIntent = "idle";
   private blocked = false;
   private pointerDown = false;
   private pressStartedAt: number | null = null;
-  private pointerGround: GroundPoint | null = null;
-  private target: GroundPoint | null = null;
-  private followTarget: GroundPoint | null = null;
+  private pressElapsedMs = 0;
+  private hasPointerGround = false;
+  private hasTarget = false;
+  private hasFollowTarget = false;
   private followStoppingDistanceMeters = 0;
-  private isClickTargetConfirmed = false;
-  private speedMetersPerSecond = 0;
 
   constructor(options: MovementControllerOptions = {}) {
-    this.position = copyPoint(options.initialPosition ?? { x: 0, z: 0 });
+    setPoint(this.position, options.initialPosition ?? { x: 0, z: 0 });
     this.radiusMeters = options.radiusMeters ?? PLAYER_RADIUS_METERS;
     this.arenaHalfSizeMeters =
       options.arenaHalfSizeMeters ?? ARENA_HALF_SIZE_METERS;
     this.holdDelayMs = options.holdDelayMs ?? HOLD_DELAY_MS;
+    this.syncState();
   }
 
   beginRightPress(point: GroundPoint, timestamp: number): void {
     this.pointerDown = true;
     this.pressStartedAt = timestamp;
-    this.pointerGround = copyPoint(point);
-    this.target = copyPoint(point);
+    this.pressElapsedMs = 0;
+    setPoint(this.pointerGroundPoint, point);
+    setPoint(this.targetPoint, point);
+    this.hasPointerGround = true;
+    this.hasTarget = true;
     this.intent = "clickToPoint";
     this.blocked = false;
-    this.isClickTargetConfirmed = false;
-    this.speedMetersPerSecond = 0;
+    this.state.isClickTargetConfirmed = false;
+    this.state.speedMetersPerSecond = 0;
+    this.syncState();
   }
 
   updatePointerGround(point: GroundPoint): void {
-    this.pointerGround = copyPoint(point);
+    setPoint(this.pointerGroundPoint, point);
+    this.hasPointerGround = true;
+
+    if (this.pointerDown && this.intent !== "holdDirection") {
+      setPoint(this.targetPoint, point);
+      this.hasTarget = true;
+      this.intent = "clickToPoint";
+      this.blocked = false;
+      this.state.isClickTargetConfirmed = false;
+      this.syncState();
+    }
   }
 
   setFollowTarget(target: GroundPoint, stoppingDistanceMeters: number): void {
@@ -88,20 +152,24 @@ export class MovementController {
   resumeFollowTarget(target: GroundPoint, stoppingDistanceMeters: number): void {
     this.pointerDown = false;
     this.pressStartedAt = null;
-    this.pointerGround = null;
-    this.target = null;
+    this.pressElapsedMs = 0;
+    this.hasPointerGround = false;
+    this.hasTarget = false;
     this.intent = "idle";
-    this.followTarget = copyPoint(target);
+    setPoint(this.followTargetPoint, target);
+    this.hasFollowTarget = true;
     this.followStoppingDistanceMeters = Math.max(stoppingDistanceMeters, 0);
     this.blocked = false;
-    this.isClickTargetConfirmed = false;
-    this.speedMetersPerSecond = 0;
+    this.state.isClickTargetConfirmed = false;
+    this.state.speedMetersPerSecond = 0;
+    this.syncState();
   }
 
   pauseFollowTarget(): void {
-    this.followTarget = null;
+    this.hasFollowTarget = false;
     this.followStoppingDistanceMeters = 0;
     this.blocked = false;
+    this.syncState();
   }
 
   clearFollowTarget(): void {
@@ -120,90 +188,118 @@ export class MovementController {
 
     this.pointerDown = false;
     this.pressStartedAt = null;
+    this.pressElapsedMs = 0;
 
     if (wasHold) {
       this.intent = "idle";
-      this.target = null;
+      this.hasTarget = false;
       this.blocked = false;
-      this.isClickTargetConfirmed = false;
-      this.speedMetersPerSecond = 0;
-    } else if (this.intent === "clickToPoint" && this.target) {
-      this.isClickTargetConfirmed = true;
+      this.state.isClickTargetConfirmed = false;
+      this.state.speedMetersPerSecond = 0;
+    } else if (this.intent === "clickToPoint" && this.hasTarget) {
+      this.state.isClickTargetConfirmed = true;
     }
+
+    this.syncState();
   }
 
   cancelInput(): void {
     this.pointerDown = false;
     this.pressStartedAt = null;
-    this.pointerGround = null;
-    this.target = null;
+    this.pressElapsedMs = 0;
+    this.hasPointerGround = false;
+    this.hasTarget = false;
     this.intent = "idle";
     this.blocked = false;
-    this.isClickTargetConfirmed = false;
-    this.speedMetersPerSecond = 0;
+    this.state.isClickTargetConfirmed = false;
+    this.state.speedMetersPerSecond = 0;
+    this.syncState();
   }
 
   step(
     deltaSeconds: number,
-    timestamp: number,
-    obstacles: readonly ObstacleDefinition[],
+    _timestamp: number,
+    collisionSource: MovementCollisionSource,
     speedMetersPerSecond = PLAYER_BASE_SPEED_METERS_PER_SECOND,
-  ): MovementSnapshot {
-    const startingPosition = copyPoint(this.position);
+  ): void {
+    setPoint(this.startingPosition, this.position);
     const safeDeltaSeconds = Math.min(
       Math.max(deltaSeconds, 0),
       MAX_FRAME_DELTA_SECONDS,
     );
 
+    if (this.pointerDown) {
+      this.pressElapsedMs += safeDeltaSeconds * 1_000;
+    }
+
     if (
       this.pointerDown &&
-      this.pressStartedAt !== null &&
-      timestamp - this.pressStartedAt >= this.holdDelayMs &&
+      this.pressElapsedMs >= this.holdDelayMs &&
       this.intent !== "holdDirection"
     ) {
       this.intent = "holdDirection";
-      this.target = null;
+      this.hasTarget = false;
       this.blocked = false;
-      this.isClickTargetConfirmed = false;
+      this.state.isClickTargetConfirmed = false;
     }
 
-    const isFollowing = this.intent === "idle" && this.followTarget !== null;
+    const isFollowing = this.intent === "idle" && this.hasFollowTarget;
+    const isPointerSteering = this.pointerDown && this.hasPointerGround;
     const destination =
-      this.intent === "clickToPoint"
-        ? this.target
-        : this.intent === "holdDirection"
-          ? this.pointerGround
-          : this.followTarget;
+      isPointerSteering
+        ? this.pointerGroundPoint
+        : this.intent === "clickToPoint" && this.hasTarget
+          ? this.targetPoint
+          : this.intent === "holdDirection" && this.hasPointerGround
+            ? this.pointerGroundPoint
+            : this.hasFollowTarget
+              ? this.followTargetPoint
+              : null;
 
-    if ((!isFollowing && this.intent === "idle") || !destination) {
-      return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+    if (
+      (!isPointerSteering && !isFollowing && this.intent === "idle") ||
+      !destination
+    ) {
+      this.finishStep(safeDeltaSeconds);
+      return;
     }
 
-    const remainingDistanceMeters = calculateGroundDistanceMeters(
-      this.position,
-      destination,
-    );
+    const distanceX = destination.x - this.position.x;
+    const distanceZ = destination.z - this.position.z;
+    const remainingDistanceMeters = Math.hypot(distanceX, distanceZ);
 
-    if (isFollowing && remainingDistanceMeters <= this.followStoppingDistanceMeters) {
+    if (
+      isFollowing &&
+      remainingDistanceMeters <= this.followStoppingDistanceMeters
+    ) {
       this.blocked = false;
-      return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+      this.finishStep(safeDeltaSeconds);
+      return;
     }
 
-    if (this.intent === "clickToPoint" && remainingDistanceMeters <= ARRIVAL_DISTANCE_METERS) {
-      this.position = copyPoint(destination);
-      this.target = null;
+    if (
+      !isPointerSteering &&
+      this.intent === "clickToPoint" &&
+      remainingDistanceMeters <= ARRIVAL_DISTANCE_METERS
+    ) {
+      setPoint(this.position, destination);
+      this.hasTarget = false;
       this.intent = "idle";
       this.blocked = false;
-      this.isClickTargetConfirmed = false;
-      return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+      this.state.isClickTargetConfirmed = false;
+      this.finishStep(safeDeltaSeconds);
+      return;
     }
 
-    const direction = directionBetween(this.position, destination);
-
-    if (direction.x === 0 && direction.z === 0) {
-      return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+    if (remainingDistanceMeters <= MIN_DIRECTION_LENGTH_METERS) {
+      this.direction.x = 0;
+      this.direction.z = 0;
+      this.finishStep(safeDeltaSeconds);
+      return;
     }
 
+    this.direction.x = distanceX / remainingDistanceMeters;
+    this.direction.z = distanceZ / remainingDistanceMeters;
     const requestedDistanceMeters = speedMetersPerSecond * safeDeltaSeconds;
     const movementDistanceMeters = isFollowing
       ? Math.min(
@@ -213,78 +309,99 @@ export class MovementController {
       : this.intent === "clickToPoint"
         ? Math.min(requestedDistanceMeters, remainingDistanceMeters)
         : requestedDistanceMeters;
-    const candidate = {
-      x: this.position.x + direction.x * movementDistanceMeters,
-      z: this.position.z + direction.z * movementDistanceMeters,
-    };
 
-    this.facing = direction;
+    this.candidate.x =
+      this.position.x + this.direction.x * movementDistanceMeters;
+    this.candidate.z =
+      this.position.z + this.direction.z * movementDistanceMeters;
+    setPoint(this.facing, this.direction);
 
     if (
-      isPositionBlocked(
-        candidate,
+      isBlocked(
+        collisionSource,
+        this.candidate,
         this.radiusMeters,
-        obstacles,
         this.arenaHalfSizeMeters,
       )
     ) {
       this.blocked = true;
 
-      if (this.intent === "clickToPoint") {
+      if (this.intent === "clickToPoint" && !isPointerSteering) {
         this.intent = "idle";
-        this.target = null;
-        this.isClickTargetConfirmed = false;
+        this.hasTarget = false;
+        this.state.isClickTargetConfirmed = false;
       }
 
-      return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+      this.finishStep(safeDeltaSeconds);
+      return;
     }
 
-    this.position = candidate;
+    setPoint(this.position, this.candidate);
     this.blocked = false;
 
     if (
+      !isPointerSteering &&
       this.intent === "clickToPoint" &&
       remainingDistanceMeters <= requestedDistanceMeters
     ) {
-      this.position = copyPoint(destination);
-      this.target = null;
+      setPoint(this.position, destination);
+      this.hasTarget = false;
       this.intent = "idle";
-      this.isClickTargetConfirmed = false;
+      this.state.isClickTargetConfirmed = false;
     }
 
-    return this.snapshotAfterStep(startingPosition, safeDeltaSeconds);
+    this.finishStep(safeDeltaSeconds);
+  }
+
+  getState(): MovementStateView {
+    return this.state;
   }
 
   getSnapshot(): MovementSnapshot {
-    return this.snapshot();
+    return this.writeSnapshot();
   }
 
-  private snapshot(): MovementSnapshot {
-    return {
-      mode: this.blocked
-        ? "blocked"
-        : this.intent === "idle" && this.followTarget
-          ? "followTarget"
-          : this.intent,
-      position: copyPoint(this.position),
-      facing: copyPoint(this.facing),
-      target: this.target ? copyPoint(this.target) : null,
-      followTarget: this.followTarget ? copyPoint(this.followTarget) : null,
-      isClickTargetConfirmed: this.isClickTargetConfirmed,
-      speedMetersPerSecond: this.speedMetersPerSecond,
+  writeSnapshot(target?: MovementSnapshot): MovementSnapshot {
+    const snapshot = target ?? {
+      mode: this.state.mode,
+      position: { x: 0, z: 0 },
+      facing: { x: 0, z: 0 },
+      target: null,
+      followTarget: null,
+      isClickTargetConfirmed: false,
+      speedMetersPerSecond: 0,
     };
+
+    snapshot.mode = this.state.mode;
+    setPoint(snapshot.position, this.position);
+    setPoint(snapshot.facing, this.facing);
+    snapshot.target = writePoint(snapshot.target, this.state.target);
+    snapshot.followTarget = writePoint(
+      snapshot.followTarget,
+      this.state.followTarget,
+    );
+    snapshot.isClickTargetConfirmed = this.state.isClickTargetConfirmed;
+    snapshot.speedMetersPerSecond = this.state.speedMetersPerSecond;
+    return snapshot;
   }
 
-  private snapshotAfterStep(
-    startingPosition: GroundPoint,
-    deltaSeconds: number,
-  ): MovementSnapshot {
-    this.speedMetersPerSecond =
-      deltaSeconds > 0
-        ? calculateGroundDistanceMeters(startingPosition, this.position) /
-          deltaSeconds
-        : 0;
+  private finishStep(deltaSeconds: number): void {
+    const distanceX = this.position.x - this.startingPosition.x;
+    const distanceZ = this.position.z - this.startingPosition.z;
+    this.state.speedMetersPerSecond =
+      deltaSeconds > 0 ? Math.hypot(distanceX, distanceZ) / deltaSeconds : 0;
+    this.syncState();
+  }
 
-    return this.snapshot();
+  private syncState(): void {
+    this.state.mode = this.blocked
+      ? "blocked"
+      : this.intent === "idle" && this.hasFollowTarget
+        ? "followTarget"
+        : this.intent;
+    this.state.target = this.hasTarget ? this.targetPoint : null;
+    this.state.followTarget = this.hasFollowTarget
+      ? this.followTargetPoint
+      : null;
   }
 }

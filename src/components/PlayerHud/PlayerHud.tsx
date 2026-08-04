@@ -5,13 +5,14 @@ import styles from "./PlayerHud.module.scss";
 interface PlayerHudProps {
   state: PlayerHudState;
   testDummy: TestDummySnapshot | null;
+  blurEnabled: boolean;
 }
 
 function formatHealth(health: number): string {
   return Math.round(health).toLocaleString("es-ES");
 }
 
-export function PlayerHud({ state, testDummy }: PlayerHudProps) {
+export function PlayerHud({ state, testDummy, blurEnabled }: PlayerHudProps) {
   const healthPercent =
     state.maximumHealth > 0
       ? Math.min((state.currentHealth / state.maximumHealth) * 100, 100)
@@ -25,7 +26,10 @@ export function PlayerHud({ state, testDummy }: PlayerHudProps) {
 
   return (
     <>
-      <aside className={styles.hud} aria-label="Estado del jugador">
+      <aside
+        className={`${styles.hud} ${blurEnabled ? styles.blurred : styles.solid}`}
+        aria-label="Estado del jugador"
+      >
         <div className={styles.eyebrow}>Arena / Prueba 01</div>
         <p className={styles.title}>Jugador</p>
 

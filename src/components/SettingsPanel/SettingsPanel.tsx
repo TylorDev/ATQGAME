@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { GAME_KEYBINDINGS } from "@/game/keybindings";
+import type {
+  GraphicsQualityPreset,
+  GraphicsQualitySettings,
+} from "@/game/graphicsQuality";
 import {
   normalizePlayerName,
   PLAYER_NAME_MAX_LENGTH,
@@ -11,12 +16,25 @@ interface SettingsPanelProps {
   onClose: () => void;
   onPlayerNameChange: (displayName: string) => void;
   playerName: string;
+  graphicsQuality: GraphicsQualitySettings;
+  onGraphicsQualityChange: (settings: GraphicsQualitySettings) => void;
 }
+
+const GRAPHICS_QUALITY_OPTIONS: readonly {
+  value: GraphicsQualityPreset;
+  label: string;
+}[] = [
+  { value: "low", label: "Bajo" },
+  { value: "balanced", label: "Equilibrado" },
+  { value: "high", label: "Alto" },
+];
 
 export function SettingsPanel({
   onClose,
   onPlayerNameChange,
   playerName,
+  graphicsQuality,
+  onGraphicsQualityChange,
 }: SettingsPanelProps) {
   const [draftName, setDraftName] = useState(playerName);
 
@@ -76,6 +94,50 @@ export function SettingsPanel({
               type="text"
               value={draftName}
             />
+          </label>
+        </section>
+
+        <section className={styles.graphics} aria-labelledby="graphics-heading">
+          <div>
+            <h3 id="graphics-heading">Calidad gráfica</h3>
+            <p>
+              Equilibrado reduce el coste sostenido sin desactivar iluminación.
+            </p>
+          </div>
+          <label className={styles.field}>
+            <span>Preset</span>
+            <select
+              value={graphicsQuality.preset}
+              onChange={(event) =>
+                onGraphicsQualityChange({
+                  ...graphicsQuality,
+                  preset: event.target.value as GraphicsQualityPreset,
+                })
+              }
+            >
+              {GRAPHICS_QUALITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.toggle}>
+            <Checkbox.Root
+              className={styles.checkbox}
+              checked={graphicsQuality.adaptiveDpr}
+              onCheckedChange={(checked) =>
+                onGraphicsQualityChange({
+                  ...graphicsQuality,
+                  adaptiveDpr: checked === true,
+                })
+              }
+            >
+              <Checkbox.Indicator className={styles.indicator}>
+                ✓
+              </Checkbox.Indicator>
+            </Checkbox.Root>
+            <span>Ajustar resolución automáticamente</span>
           </label>
         </section>
 

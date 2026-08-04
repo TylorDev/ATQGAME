@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { DebugPanel } from "@/components/DebugPanel/DebugPanel";
 import { GameCanvas } from "@/components/GameCanvas/GameCanvas";
@@ -19,6 +19,13 @@ import {
   isEditableEventTarget,
   PLAYER_STATS_KEYBINDING,
 } from "@/game/keybindings";
+import {
+  getDefaultGraphicsQualitySettings,
+  loadGraphicsQualitySettings,
+  resolveGraphicsQuality,
+  saveGraphicsQualitySettings,
+  type GraphicsQualitySettings,
+} from "@/game/graphicsQuality";
 import {
   loadPlayerName,
   normalizePlayerName,
@@ -52,6 +59,14 @@ function getInitialPlayerName(): string {
   }
 }
 
+function getInitialGraphicsQualitySettings(): GraphicsQualitySettings {
+  try {
+    return loadGraphicsQualitySettings(window.localStorage);
+  } catch {
+    return getDefaultGraphicsQualitySettings();
+  }
+}
+
 export function Home() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [cameraSettings, setCameraSettings] =
@@ -70,6 +85,16 @@ export function Home() {
   const [isPlayerStatsOpen, setIsPlayerStatsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [playerName, setPlayerName] = useState(getInitialPlayerName);
+  const [graphicsQualitySettings, setGraphicsQualitySettings] =
+    useState<GraphicsQualitySettings>(getInitialGraphicsQualitySettings);
+  const resolvedGraphicsQuality = useMemo(
+    () =>
+      resolveGraphicsQuality(
+        graphicsQualitySettings,
+        window.devicePixelRatio,
+      ),
+    [graphicsQualitySettings],
+  );
 
   const handleCameraDistanceChange = useCallback(
     (distanceDeltaMeters: number): void => {
@@ -135,6 +160,13 @@ export function Home() {
     }
   }, [playerName]);
 
+  useEffect(() => {
+    saveGraphicsQualitySettings(
+      window.localStorage,
+      graphicsQualitySettings,
+    );
+  }, [graphicsQualitySettings]);
+
   const handlePlayerNameChange = useCallback((displayName: string): void => {
     setPlayerName((currentName) => normalizePlayerName(displayName, currentName));
   }, []);
@@ -150,6 +182,7 @@ export function Home() {
         combatSettings={combatSettings}
         debugVisible={import.meta.env.DEV && debugEnabled}
         playerName={playerName}
+        quality={resolvedGraphicsQuality}
         onDebugStatsChange={setPlayerDebugStats}
         onPlayerHudChange={setPlayerHudState}
         onTestDummyHudChange={setTestDummyHudState}
@@ -168,7 +201,11 @@ export function Home() {
         />
       ) : null}
 
-      <PlayerHud state={playerHudState} testDummy={testDummyHudState} />
+      <PlayerHud
+        state={playerHudState}
+        testDummy={testDummyHudState}
+        blurEnabled={resolvedGraphicsQuality.hudBlur}
+      />
 
       <GameConsole />
 
@@ -194,6 +231,8 @@ export function Home() {
           onClose={() => setIsSettingsOpen(false)}
           onPlayerNameChange={handlePlayerNameChange}
           playerName={playerName}
+          graphicsQuality={graphicsQualitySettings}
+          onGraphicsQualityChange={setGraphicsQualitySettings}
         />
       ) : null}
 

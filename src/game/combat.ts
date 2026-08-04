@@ -58,17 +58,24 @@ export function normalizePlayerCombatSettings(
 }
 
 export class PlayerVitalityController {
-  private settings: PlayerCombatSettings;
-  private currentHealth: number;
+  private readonly state: PlayerCombatSnapshot;
 
   constructor(settings: PlayerCombatSettings = DEFAULT_PLAYER_COMBAT_SETTINGS) {
-    this.settings = normalizePlayerCombatSettings(settings);
-    this.currentHealth = this.settings.maximumHealth;
+    const normalized = normalizePlayerCombatSettings(settings);
+    this.state = {
+      ...normalized,
+      currentHealth: normalized.maximumHealth,
+    };
   }
 
   updateSettings(settings: PlayerCombatSettings): PlayerCombatSnapshot {
-    this.settings = normalizePlayerCombatSettings(settings);
-    this.currentHealth = Math.min(this.currentHealth, this.settings.maximumHealth);
+    const normalized = normalizePlayerCombatSettings(settings);
+    this.state.maximumHealth = normalized.maximumHealth;
+    this.state.defensePercent = normalized.defensePercent;
+    this.state.currentHealth = Math.min(
+      this.state.currentHealth,
+      this.state.maximumHealth,
+    );
 
     return this.getSnapshot();
   }
@@ -77,13 +84,14 @@ export class PlayerVitalityController {
     const safeBaseDamage = Number.isFinite(baseDamage)
       ? Math.max(0, baseDamage)
       : 0;
-    const effectiveDamage = safeBaseDamage * (1 - this.settings.defensePercent / 100);
-    const remainingHealth = Math.max(this.currentHealth - effectiveDamage, 0);
-    const appliedDamage = this.currentHealth - remainingHealth;
+    const effectiveDamage =
+      safeBaseDamage * (1 - this.state.defensePercent / 100);
+    const remainingHealth = Math.max(this.state.currentHealth - effectiveDamage, 0);
+    const appliedDamage = this.state.currentHealth - remainingHealth;
     const didDie = remainingHealth === 0 && appliedDamage > 0;
 
-    this.currentHealth = didDie
-      ? this.settings.maximumHealth
+    this.state.currentHealth = didDie
+      ? this.state.maximumHealth
       : remainingHealth;
 
     return {
@@ -95,10 +103,10 @@ export class PlayerVitalityController {
   }
 
   getSnapshot(): PlayerCombatSnapshot {
-    return {
-      currentHealth: this.currentHealth,
-      maximumHealth: this.settings.maximumHealth,
-      defensePercent: this.settings.defensePercent,
-    };
+    return { ...this.state };
+  }
+
+  getState(): PlayerCombatSnapshot {
+    return this.state;
   }
 }

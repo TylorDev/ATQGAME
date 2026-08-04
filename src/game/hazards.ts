@@ -43,31 +43,40 @@ export function circleIntersectsGroundHazard(
 
 export class BurningHazardController {
   private elapsedInsideSeconds = 0;
-  private isActive = false;
+  private readonly state: BurningHazardSnapshot = {
+    isActive: false,
+    damageTicks: 0,
+  };
 
   step(
     deltaSeconds: number,
     isInsideHazard: boolean,
     tickIntervalSeconds: number,
   ): BurningHazardSnapshot {
+    this.state.damageTicks = 0;
+
     if (!isInsideHazard) {
       this.elapsedInsideSeconds = 0;
-      this.isActive = false;
-
-      return { isActive: false, damageTicks: 0 };
+      this.state.isActive = false;
+      return this.state;
     }
 
-    this.isActive = true;
+    this.state.isActive = true;
     this.elapsedInsideSeconds += Math.max(deltaSeconds, 0);
-    const damageTicks = Math.floor(
+    this.state.damageTicks = Math.floor(
       this.elapsedInsideSeconds / tickIntervalSeconds,
     );
-    this.elapsedInsideSeconds -= damageTicks * tickIntervalSeconds;
+    this.elapsedInsideSeconds -=
+      this.state.damageTicks * tickIntervalSeconds;
 
-    return { isActive: this.isActive, damageTicks };
+    return this.state;
   }
 
   getSnapshot(): BurningHazardSnapshot {
-    return { isActive: this.isActive, damageTicks: 0 };
+    return { isActive: this.state.isActive, damageTicks: 0 };
+  }
+
+  getState(): BurningHazardSnapshot {
+    return this.state;
   }
 }
