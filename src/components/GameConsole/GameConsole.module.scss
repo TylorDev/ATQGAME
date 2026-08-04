@@ -1,0 +1,364 @@
+.window {
+  position: absolute;
+  z-index: $z-index-console;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  color: $color-text-primary;
+  background: $color-console-background;
+  border: $border-width-default solid $color-console-border;
+  border-radius: $border-radius-md;
+  box-shadow: $shadow-lg;
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+.header {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-4;
+  padding: $spacing-2 $spacing-3 $spacing-2 $spacing-4;
+  background:
+    linear-gradient(90deg, rgb(228 123 113 / 8%), transparent 34%),
+    $color-console-header;
+  border-bottom: $border-width-default solid $color-console-border;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.identity,
+.actions {
+  display: flex;
+  align-items: center;
+}
+
+.identity {
+  min-width: 0;
+  gap: $spacing-3;
+}
+
+.live {
+  width: $spacing-2;
+  height: $spacing-2;
+  flex: 0 0 auto;
+  background: $color-success;
+  border-radius: $border-radius-full;
+  box-shadow: 0 0 0 $spacing-1 rgb(99 194 180 / 12%);
+}
+
+.eyebrow,
+.title,
+.action,
+.confirm,
+.hide,
+.feed,
+.newEntries {
+  font-family: $font-family-utility;
+}
+
+.eyebrow {
+  display: block;
+  overflow: hidden;
+  color: $color-text-disabled;
+  font-size: 0.6rem;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.11em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.title {
+  margin: 0;
+  overflow: hidden;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.04em;
+  line-height: $line-height-sm;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.actions {
+  flex: 0 0 auto;
+  gap: $spacing-1;
+}
+
+.action,
+.confirm,
+.hide {
+  height: 2rem;
+  color: $color-text-secondary;
+  background: transparent;
+  border: $border-width-default solid transparent;
+  border-radius: $border-radius-sm;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  transition:
+    color $transition-fast,
+    background-color $transition-fast,
+    border-color $transition-fast;
+}
+
+.action,
+.confirm {
+  padding: 0 $spacing-2;
+}
+
+.hide {
+  width: 2rem;
+  padding: 0;
+  color: $color-text-primary;
+  font-size: $font-size-lg;
+  line-height: 1;
+}
+
+.action:hover,
+.action:focus-visible,
+.hide:hover,
+.hide:focus-visible {
+  color: $color-primary;
+  background: rgb(215 169 107 / 9%);
+  border-color: $border-color-default;
+  outline: none;
+}
+
+.confirm {
+  color: $color-background;
+  background: $color-error;
+  border-color: $color-error;
+}
+
+.confirm:focus-visible {
+  outline: 2px solid $color-text-primary;
+  outline-offset: 2px;
+}
+
+.action:disabled,
+.confirm:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
+.feed {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: $color-grid transparent;
+  contain: strict;
+  overflow-anchor: none;
+}
+
+.body {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.retention {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-3;
+  padding: $spacing-1 $spacing-4;
+  color: $color-text-disabled;
+  background: rgb(255 255 255 / 2%);
+  border-bottom: $border-width-default solid rgb(255 255 255 / 5%);
+  font-family: $font-family-utility;
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.list {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 100%;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  gap: $spacing-3;
+  align-items: baseline;
+  min-height: 2rem;
+  padding: $spacing-2 $spacing-4 $spacing-2 $spacing-5;
+  border-bottom: $border-width-default solid rgb(255 255 255 / 4%);
+}
+
+.entry::before {
+  position: absolute;
+  top: $spacing-2;
+  bottom: $spacing-2;
+  left: $spacing-2;
+  width: 2px;
+  content: "";
+  background: $color-error;
+  border-radius: $border-radius-full;
+  opacity: 0.72;
+}
+
+.time {
+  color: $color-text-disabled;
+  font-size: $font-size-xs;
+  font-variant-numeric: tabular-nums;
+}
+
+.kind {
+  padding: 0.1rem $spacing-1;
+  color: $color-background;
+  background: $color-error;
+  border-radius: $border-radius-sm;
+  font-size: 0.6rem;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.message {
+  min-width: 0;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  line-height: $line-height-md;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  display: grid;
+  min-height: 100%;
+  padding: $spacing-6;
+  align-content: center;
+  justify-items: center;
+  gap: $spacing-2;
+  color: $color-text-disabled;
+  text-align: center;
+}
+
+.emptyCode {
+  color: $color-error;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  letter-spacing: 0.12em;
+}
+
+.empty p {
+  max-width: 24rem;
+  margin: 0;
+  font-size: $font-size-xs;
+  line-height: $line-height-md;
+}
+
+.newEntries {
+  position: absolute;
+  right: $spacing-3;
+  bottom: $spacing-3;
+  z-index: 2;
+  padding: $spacing-2 $spacing-3;
+  color: $color-background;
+  background: $color-primary;
+  border: 0;
+  border-radius: $border-radius-full;
+  box-shadow: $shadow-md;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+}
+
+.newEntries:focus-visible {
+  outline: 2px solid $color-text-primary;
+  outline-offset: 2px;
+}
+
+.handle {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.n,
+.s {
+  right: $spacing-2;
+  left: $spacing-2;
+  height: $spacing-2;
+}
+
+.e,
+.w {
+  top: $spacing-2;
+  bottom: $spacing-2;
+  width: $spacing-2;
+}
+
+.n {
+  top: 0;
+  cursor: ns-resize;
+}
+
+.ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.e {
+  right: 0;
+  cursor: ew-resize;
+}
+
+.se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.s {
+  bottom: 0;
+  cursor: ns-resize;
+}
+
+.sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.w {
+  left: 0;
+  cursor: ew-resize;
+}
+
+.nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.ne,
+.se,
+.sw,
+.nw {
+  width: $spacing-3;
+  height: $spacing-3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .confirm,
+  .hide {
+    transition: none;
+  }
+}

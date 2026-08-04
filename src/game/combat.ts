@@ -15,6 +15,7 @@ export const DEFAULT_PLAYER_COMBAT_SETTINGS: Readonly<PlayerCombatSettings> = {
 
 export interface DamageResult {
   effectiveDamage: number;
+  appliedDamage: number;
   didDie: boolean;
   snapshot: PlayerCombatSnapshot;
 }
@@ -78,7 +79,8 @@ export class PlayerVitalityController {
       : 0;
     const effectiveDamage = safeBaseDamage * (1 - this.settings.defensePercent / 100);
     const remainingHealth = Math.max(this.currentHealth - effectiveDamage, 0);
-    const didDie = remainingHealth === 0 && effectiveDamage > 0;
+    const appliedDamage = this.currentHealth - remainingHealth;
+    const didDie = remainingHealth === 0 && appliedDamage > 0;
 
     this.currentHealth = didDie
       ? this.settings.maximumHealth
@@ -86,6 +88,7 @@ export class PlayerVitalityController {
 
     return {
       effectiveDamage,
+      appliedDamage,
       didDie,
       snapshot: this.getSnapshot(),
     };

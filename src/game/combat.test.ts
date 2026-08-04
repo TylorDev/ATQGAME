@@ -18,14 +18,17 @@ describe("PlayerVitalityController", () => {
 
     expect(noDefense.applyDamage(100)).toMatchObject({
       effectiveDamage: 100,
+      appliedDamage: 100,
       snapshot: { currentHealth: 900 },
     });
     expect(halfDefense.applyDamage(100)).toMatchObject({
       effectiveDamage: 50,
+      appliedDamage: 50,
       snapshot: { currentHealth: 950 },
     });
     expect(fullDefense.applyDamage(100)).toMatchObject({
       effectiveDamage: 0,
+      appliedDamage: 0,
       snapshot: { currentHealth: 1_000 },
     });
   });
@@ -53,9 +56,23 @@ describe("PlayerVitalityController", () => {
     const result = controller.applyDamage(100);
 
     expect(result.didDie).toBe(true);
+    expect(result.appliedDamage).toBe(100);
     expect(result.snapshot).toMatchObject({
       currentHealth: 100,
       maximumHealth: 100,
     });
+  });
+
+  it("reports only the health actually lost by an overkill hit", () => {
+    const controller = new PlayerVitalityController({
+      maximumHealth: 100,
+      defensePercent: 0,
+    });
+
+    const result = controller.applyDamage(1_000);
+
+    expect(result.effectiveDamage).toBe(1_000);
+    expect(result.appliedDamage).toBe(100);
+    expect(result.didDie).toBe(true);
   });
 });

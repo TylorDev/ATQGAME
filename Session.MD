@@ -41,3 +41,20 @@
   `npm run typecheck` y `npm run build:web` completados correctamente.
 - No se realizaron comprobaciones visuales ni de responsive móvil, por tratarse
   de una aplicación Electron.
+
+## Consola global de daño
+
+- Se añadió una consola del mapa movible, redimensionable desde bordes y
+  esquinas, ocultable con `F10` y con geometría/visibilidad persistentes.
+- Registra el daño efectivo recibido por el jugador y el muñeco de pruebas con
+  hora local, receptor y fuente tipada; el historial solo vive durante la sesión.
+- Settings incorpora un perfil local con nombre de jugador persistente y los
+  atajos de juego se ignoran mientras se escribe en un campo editable.
+- La consola conserva los últimos 2.000 eventos en un buffer circular O(1),
+  virtualiza las filas y congela la vista cuando se consulta historial antiguo.
+- El arrastre y la redimensión actualizan el DOM una vez por frame y solo
+  confirman/persisten la geometría al terminar el gesto.
+- Benchmark local: 20.000 inserciones en ~22 ms y 100.000 en ~34 ms, frente a
+  ~1,97 s para 20.000 con el historial ilimitado anterior.
+- Verificación de esta entrega: `npm test` (77 pruebas), `npm run typecheck` y
+  `npm run build` completados correctamente, sin comprobaciones visuales.

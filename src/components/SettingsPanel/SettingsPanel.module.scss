@@ -10,6 +10,8 @@
 
 .panel {
   width: min(34rem, 100%);
+  max-height: min(46rem, calc(100vh - #{$spacing-8}));
+  overflow-y: auto;
   padding: $spacing-6;
   color: $color-text-primary;
   background:
@@ -91,6 +93,56 @@ h3 {
   font-size: $font-size-sm;
 }
 
+.profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.8fr);
+  gap: $spacing-5;
+  align-items: end;
+  margin-top: $spacing-5;
+  padding: $spacing-4;
+  background: rgb(99 194 180 / 7%);
+  border: 1px solid rgb(99 194 180 / 22%);
+  border-radius: $border-radius-md;
+}
+
+.profile h3 {
+  color: $color-secondary;
+}
+
+.profile p {
+  margin-top: $spacing-1;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  line-height: $line-height-md;
+}
+
+.field {
+  display: grid;
+  gap: $spacing-2;
+  color: $color-text-secondary;
+  font-family: $font-family-utility;
+  font-size: $font-size-xs;
+}
+
+.field input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: $spacing-2 $spacing-3;
+  color: $color-text-primary;
+  background: rgb(9 14 21 / 74%);
+  border: $border-width-default solid rgb(99 194 180 / 34%);
+  border-radius: $border-radius-sm;
+  outline: none;
+  transition:
+    border-color $transition-fast,
+    box-shadow $transition-fast;
+}
+
+.field input:focus {
+  border-color: $color-secondary;
+  box-shadow: 0 0 0 3px rgb(99 194 180 / 18%);
+}
+
 .bindings {
   display: grid;
   gap: $spacing-2;
@@ -118,6 +170,20 @@ h3 {
   font-weight: $font-weight-bold;
   place-items: center;
   text-align: center;
+}
+
+@media (max-width: $breakpoint-mobile) {
+  .overlay {
+    padding: $spacing-3;
+  }
+
+  .panel {
+    padding: $spacing-4;
+  }
+
+  .profile {
+    grid-template-columns: 1fr;
+  }
 }
 
 .binding p {

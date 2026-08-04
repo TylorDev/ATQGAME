@@ -9,6 +9,7 @@ import type { TestDummyDefinition } from "./types";
 
 const definition: TestDummyDefinition = {
   id: "dummy",
+  displayName: "Muñeco de pruebas",
   xMeters: 0,
   zMeters: 0,
   maximumHealth: 100,
@@ -50,6 +51,7 @@ describe("test dummy combat", () => {
     const controller = new TestDummyController(definition);
 
     const defeat = controller.applyDamage(100, 0);
+    expect(defeat.appliedDamage).toBe(100);
     expect(defeat.didDefeat).toBe(true);
     expect(defeat.snapshot).toMatchObject({
       currentHealth: 0,

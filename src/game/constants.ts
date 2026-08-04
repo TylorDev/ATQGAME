@@ -29,6 +29,7 @@ export const CAMERA_DAMPING = 7;
 
 export const BURNING_TILE: Readonly<GroundHazardDefinition> = {
   id: "burning-carpet",
+  displayName: "Alfombra ardiente",
   xMeters: -3.6,
   zMeters: -4.1,
   widthMeters: 3,
@@ -39,6 +40,7 @@ export const BURNING_TILE: Readonly<GroundHazardDefinition> = {
 
 export const TEST_DUMMY: Readonly<TestDummyDefinition> = {
   id: "test-dummy",
+  displayName: "Muñeco de pruebas",
   xMeters: 4,
   zMeters: 2,
   maximumHealth: 10_000,

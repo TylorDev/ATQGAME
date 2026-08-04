@@ -19,6 +19,7 @@ interface GameCanvasProps {
   cameraSettings: CameraSettings;
   combatSettings: PlayerCombatSettings;
   debugVisible: boolean;
+  playerName: string;
   onDebugStatsChange: (stats: PlayerDebugStats) => void;
   onPlayerHudChange: (state: PlayerHudState) => void;
   onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
@@ -29,6 +30,7 @@ export function GameCanvas({
   cameraSettings,
   combatSettings,
   debugVisible,
+  playerName,
   onDebugStatsChange,
   onPlayerHudChange,
   onTestDummyHudChange,
@@ -108,6 +110,7 @@ export function GameCanvas({
           cameraSettings={cameraSettings}
           combatSettings={combatSettings}
           debugVisible={debugVisible}
+          playerName={playerName}
           onDebugStatsChange={onDebugStatsChange}
           onPlayerHudChange={onPlayerHudChange}
           selectedTarget={isTestDummySelected ? TEST_DUMMY : null}

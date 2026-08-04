@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { usePublishDamageLog } from "@/contexts/GameLogContext";
 import {
   OverheadStatus,
   type OverheadStatusHandle,
@@ -38,6 +39,7 @@ import {
   BurningHazardController,
   circleIntersectsGroundHazard,
 } from "@/game/hazards";
+import { isEditableEventTarget } from "@/game/keybindings";
 import {
   getActivePlayerEffects,
   getCurrentPlayerSpeedMetersPerSecond,
@@ -66,6 +68,7 @@ interface PlayerControllerProps {
   cameraSettings: CameraSettings;
   combatSettings: PlayerCombatSettings;
   debugVisible: boolean;
+  playerName: string;
   onDebugStatsChange: (stats: PlayerDebugStats) => void;
   onPlayerHudChange: (state: PlayerHudState) => void;
   selectedTarget: TestDummyDefinition | null;
@@ -134,6 +137,7 @@ export function PlayerController({
   cameraSettings,
   combatSettings,
   debugVisible,
+  playerName,
   onDebugStatsChange,
   onPlayerHudChange,
   selectedTarget,
@@ -146,6 +150,7 @@ export function PlayerController({
   onCameraDistanceChange,
 }: PlayerControllerProps) {
   const groupRef = useRef<Group>(null);
+  const publishDamage = usePublishDamageLog();
   const pathLineRef = useRef<LineSegments>(null);
   const pathGeometryRef = useRef<BufferGeometry>(null);
   const selectedPathLineRef = useRef<LineSegments>(null);
@@ -346,7 +351,11 @@ export function PlayerController({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== "KeyF" || event.repeat) {
+      if (
+        event.code !== "KeyF" ||
+        event.repeat ||
+        isEditableEventTarget(event.target)
+      ) {
         return;
       }
 
@@ -427,6 +436,23 @@ export function PlayerController({
         );
         didDummyStateChange ||= damageResult.didApplyDamage;
         dummySnapshot = damageResult.snapshot;
+
+        if (damageResult.appliedDamage > 0) {
+          publishDamage({
+            occurredAtMs: Date.now(),
+            appliedDamage: damageResult.appliedDamage,
+            receiver: {
+              id: TEST_DUMMY.id,
+              kind: "test-dummy",
+              displayName: TEST_DUMMY.displayName,
+            },
+            source: {
+              id: "local-player",
+              kind: "player",
+              displayName: playerName,
+            },
+          });
+        }
       }
     } else {
       autoAttackController.step(0, false);
@@ -476,6 +502,23 @@ export function PlayerController({
       const damageResult = vitalityController.applyDamage(
         BURNING_TILE.damagePerTick,
       );
+
+      if (damageResult.appliedDamage > 0) {
+        publishDamage({
+          occurredAtMs: Date.now(),
+          appliedDamage: damageResult.appliedDamage,
+          receiver: {
+            id: "local-player",
+            kind: "player",
+            displayName: playerName,
+          },
+          source: {
+            id: BURNING_TILE.id,
+            kind: "entity",
+            displayName: BURNING_TILE.displayName,
+          },
+        });
+      }
 
       if (damageResult.didDie) {
         deathNoticeUntilMs.current = timestampMs + DEATH_NOTICE_DURATION_MS;

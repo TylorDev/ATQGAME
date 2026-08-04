@@ -39,6 +39,9 @@ $color-warning: #e2ae62;
 $color-error: #e47b71;
 $color-info: #77aee8;
 $color-overlay: rgb(9 14 21 / 78%);
+$color-console-background: rgb(9 14 21 / 95%);
+$color-console-header: #151f2b;
+$color-console-border: rgb(228 123 113 / 32%);
 
 // Spacing
 $spacing-1: 0.25rem;
@@ -79,6 +82,7 @@ $breakpoint-wide: 1440px;
 $z-index-dropdown: 100;
 $z-index-sticky: 200;
 $z-index-overlay: 300;
+$z-index-console: 350;
 $z-index-modal: 400;
 $z-index-toast: 500;
 

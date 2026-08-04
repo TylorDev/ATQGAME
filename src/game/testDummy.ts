@@ -21,6 +21,7 @@ export interface TestDummyStepResult {
 }
 
 export interface TestDummyDamageResult {
+  appliedDamage: number;
   didDefeat: boolean;
   didApplyDamage: boolean;
   snapshot: TestDummySnapshot;
@@ -58,6 +59,7 @@ export class TestDummyController {
 
     if (this.isDefeated || safeDamage === 0) {
       return {
+        appliedDamage: 0,
         didDefeat: false,
         didApplyDamage: false,
         snapshot: this.getSnapshot(timestampMs),
@@ -78,6 +80,7 @@ export class TestDummyController {
     }
 
     return {
+      appliedDamage,
       didDefeat,
       didApplyDamage: true,
       snapshot: this.getSnapshot(timestampMs),

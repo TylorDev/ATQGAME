@@ -20,6 +20,7 @@ npm test
 - Clic derecho sostenido: avanza continuamente y sigue la dirección del puntero.
 - `F`: activa un impulso inmediato de velocidad ×1,8 durante 5 s; su cooldown
   comienza al activarlo y dura 15 s.
+- `F10`: muestra u oculta la consola global del mapa.
 - La alfombra roja incandescente aplica **Ardiendo** mientras el jugador la pisa.
   Tras 2 s dentro, inflige daño cada 2 s y se elimina inmediatamente al salir.
 
@@ -38,3 +39,15 @@ actual y los buffs/debuffs activos en todos los builds.
 
 Los logs del renderer aparecen en la terminal de desarrollo con el prefijo
 `[Renderer]` cuando se ejecuta dentro de Electron.
+
+## Consola del mapa
+
+La consola interna registra el daño efectivo de todos los actores de la instancia
+local del mapa. Puede moverse desde el encabezado, redimensionarse desde cualquier
+borde o esquina y recuerda su geometría y visibilidad entre ejecuciones. El
+historial permanece únicamente durante la sesión, conserva los últimos 2.000
+eventos y muestra cuántos registros antiguos fueron descartados. La lista se
+virtualiza y puede vaciarse con la acción `Limpiar` del encabezado.
+
+El nombre del jugador usado por los registros se configura en
+`Settings > Perfil local` y se guarda localmente.

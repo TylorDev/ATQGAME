@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { GameLogProvider } from "@/contexts/GameLogContext";
 import { Home } from "@/pages/Home/Home";
 import "@/styles/global.scss";
 
@@ -13,6 +14,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <Home />
+    <GameLogProvider>
+      <Home />
+    </GameLogProvider>
   </StrictMode>,
 );

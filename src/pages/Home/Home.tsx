@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { DebugPanel } from "@/components/DebugPanel/DebugPanel";
 import { GameCanvas } from "@/components/GameCanvas/GameCanvas";
+import { GameConsole } from "@/components/GameConsole/GameConsole";
 import { PlayerHud } from "@/components/PlayerHud/PlayerHud";
 import { PlayerStatsPanel } from "@/components/PlayerStatsPanel/PlayerStatsPanel";
 import { SettingsPanel } from "@/components/SettingsPanel/SettingsPanel";
@@ -15,8 +16,14 @@ import {
 import { DEFAULT_PLAYER_COMBAT_SETTINGS } from "@/game/combat";
 import {
   CLOSE_OVERLAYS_KEYBINDING,
+  isEditableEventTarget,
   PLAYER_STATS_KEYBINDING,
 } from "@/game/keybindings";
+import {
+  loadPlayerName,
+  normalizePlayerName,
+  savePlayerName,
+} from "@/game/playerIdentity";
 import {
   DEFAULT_PLAYER_DEBUG_STATS,
   DEFAULT_PLAYER_HUD_STATE,
@@ -37,6 +44,14 @@ function getInitialCameraSettings(): CameraSettings {
   }
 }
 
+function getInitialPlayerName(): string {
+  try {
+    return loadPlayerName(window.localStorage);
+  } catch {
+    return normalizePlayerName(null);
+  }
+}
+
 export function Home() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [cameraSettings, setCameraSettings] =
@@ -54,6 +69,7 @@ export function Home() {
     useState<TestDummySnapshot | null>(null);
   const [isPlayerStatsOpen, setIsPlayerStatsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [playerName, setPlayerName] = useState(getInitialPlayerName);
 
   const handleCameraDistanceChange = useCallback(
     (distanceDeltaMeters: number): void => {
@@ -80,14 +96,19 @@ export function Home() {
         return;
       }
 
+      if (event.code === CLOSE_OVERLAYS_KEYBINDING.code) {
+        closeOverlays();
+        return;
+      }
+
+      if (isEditableEventTarget(event.target)) {
+        return;
+      }
+
       if (event.code === PLAYER_STATS_KEYBINDING.code) {
         setIsPlayerStatsOpen((isOpen) => !isOpen);
         setIsSettingsOpen(false);
         return;
-      }
-
-      if (event.code === CLOSE_OVERLAYS_KEYBINDING.code) {
-        closeOverlays();
       }
     };
 
@@ -106,6 +127,18 @@ export function Home() {
     }
   }, [cameraSettings]);
 
+  useEffect(() => {
+    try {
+      savePlayerName(window.localStorage, playerName);
+    } catch {
+      // The current name remains usable when localStorage is unavailable.
+    }
+  }, [playerName]);
+
+  const handlePlayerNameChange = useCallback((displayName: string): void => {
+    setPlayerName((currentName) => normalizePlayerName(displayName, currentName));
+  }, []);
+
   return (
     <Main>
       <VisuallyHidden.Root asChild>
@@ -116,6 +149,7 @@ export function Home() {
         cameraSettings={cameraSettings}
         combatSettings={combatSettings}
         debugVisible={import.meta.env.DEV && debugEnabled}
+        playerName={playerName}
         onDebugStatsChange={setPlayerDebugStats}
         onPlayerHudChange={setPlayerHudState}
         onTestDummyHudChange={setTestDummyHudState}
@@ -136,6 +170,8 @@ export function Home() {
 
       <PlayerHud state={playerHudState} testDummy={testDummyHudState} />
 
+      <GameConsole />
+
       <button
         aria-controls="settings-panel"
         aria-expanded={isSettingsOpen}
@@ -154,7 +190,11 @@ export function Home() {
       ) : null}
 
       {isSettingsOpen ? (
-        <SettingsPanel onClose={() => setIsSettingsOpen(false)} />
+        <SettingsPanel
+          onClose={() => setIsSettingsOpen(false)}
+          onPlayerNameChange={handlePlayerNameChange}
+          playerName={playerName}
+        />
       ) : null}
 
       <div className={styles.caption} aria-hidden="true">

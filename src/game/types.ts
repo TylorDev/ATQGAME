@@ -17,6 +17,7 @@ export interface ObstacleDefinition {
 
 export interface GroundHazardDefinition {
   id: string;
+  displayName: string;
   xMeters: number;
   zMeters: number;
   widthMeters: number;
@@ -27,6 +28,7 @@ export interface GroundHazardDefinition {
 
 export interface TestDummyDefinition {
   id: string;
+  displayName: string;
   xMeters: number;
   zMeters: number;
   maximumHealth: number;

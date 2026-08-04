@@ -43,6 +43,14 @@ export const PLAYER_STATS_KEYBINDING: Readonly<GameKeybinding> = {
   description: "Abre o cierra el panel de estadísticas del personaje.",
 };
 
+export const GAME_CONSOLE_KEYBINDING: Readonly<GameKeybinding> = {
+  id: "game-console",
+  input: "F10",
+  code: "F10",
+  label: "Consola del mapa",
+  description: "Muestra u oculta el registro global de daño del mapa.",
+};
+
 export const CLOSE_OVERLAYS_KEYBINDING: Readonly<GameKeybinding> = {
   id: "close-overlays",
   input: "Esc",
@@ -61,5 +69,24 @@ export const GAME_KEYBINDINGS = [
   ...HUD_KEYBINDINGS,
   CAMERA_ZOOM_KEYBINDING,
   PLAYER_STATS_KEYBINDING,
+  GAME_CONSOLE_KEYBINDING,
   CLOSE_OVERLAYS_KEYBINDING,
 ] as const;
+
+export function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") {
+    return false;
+  }
+
+  const candidate = target as {
+    tagName?: string;
+    isContentEditable?: boolean;
+  };
+
+  return (
+    candidate.isContentEditable === true ||
+    candidate.tagName === "INPUT" ||
+    candidate.tagName === "TEXTAREA" ||
+    candidate.tagName === "SELECT"
+  );
+}
