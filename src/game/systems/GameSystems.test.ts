@@ -38,7 +38,7 @@ function createFixture(
     commands,
     events,
     markCriticalUiChange() {
-      world.criticalUiDirty = true;
+      world.uiDirty = true;
     },
   };
   return { world, commands, events, context };
@@ -71,7 +71,7 @@ describe("default game systems", () => {
 
     expect(fixture.world.target.selected).toBe(true);
     expect(fixture.world.target.pursuitActive).toBe(false);
-    expect(fixture.world.player.movement.getState().mode).toBe(
+    expect(fixture.world.player.movement.getSnapshot().mode).toBe(
       "clickToPoint",
     );
   });
@@ -123,7 +123,7 @@ describe("default game systems", () => {
 
     runSystem(new RespawnSystem(), fixture);
 
-    expect(fixture.world.target.controller.getState().isDefeated).toBe(false);
+    expect(fixture.world.target.controller.getSnapshot(3_000).isDefeated).toBe(false);
     expect(drainEvents(fixture.events)).toContainEqual({
       type: "vitality-change",
       receiverId: definition.id,
@@ -140,7 +140,7 @@ describe("default game systems", () => {
     runSystem(new AutoAttackSystem(), fixture);
 
     expect(
-      fixture.world.target.controller.getState().currentHealth,
+      fixture.world.target.controller.getSnapshot(0).currentHealth,
     ).toBeLessThan(fixture.world.target.definition.maximumHealth);
   });
 
@@ -154,8 +154,8 @@ describe("default game systems", () => {
     runSystem(new HazardSystem(), fixture);
     runSystem(new EffectSystem(), fixture);
 
-    expect(fixture.world.player.vitality.getState().currentHealth).toBeLessThan(
-      fixture.world.player.vitality.getState().maximumHealth,
+    expect(fixture.world.player.vitality.getSnapshot().currentHealth).toBeLessThan(
+      fixture.world.player.vitality.getSnapshot().maximumHealth,
     );
     expect(fixture.world.player.effects.map((effect) => effect.id)).toContain(
       "burning",
@@ -172,6 +172,24 @@ describe("default game systems", () => {
     expect(fixture.world.player.effects.map((effect) => effect.id)).toEqual([
       "speed-boost",
     ]);
+  });
+
+  it("composes boost and burning effects and removes expired effects", () => {
+    const fixture = createFixture();
+    fixture.world.player.speedBoost.activate(0);
+    fixture.world.player.isBurning = true;
+    fixture.world.simulationTimeMs = 2_500;
+
+    runSystem(new EffectSystem(), fixture);
+    expect(fixture.world.player.effects).toEqual([
+      expect.objectContaining({ id: "speed-boost", timerProgress: 0.5 }),
+      expect.objectContaining({ id: "burning", timerProgress: 1 }),
+    ]);
+
+    fixture.world.player.isBurning = false;
+    fixture.world.simulationTimeMs = 5_000;
+    runSystem(new EffectSystem(), fixture);
+    expect(fixture.world.player.effects).toEqual([]);
   });
 
   it("updates optional performance entities in stable buffers", () => {

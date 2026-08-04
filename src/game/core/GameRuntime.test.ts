@@ -8,6 +8,12 @@ import {
 import { SIMULATION_TICK_SECONDS } from "./GameClock";
 import { createDefaultGameRuntime } from "./createDefaultGameRuntime";
 import type { GameRuntime } from "./GameRuntime";
+import {
+  createMovementRenderBuffer,
+  createPerformanceLoadRenderBuffer,
+  createPlayerRenderBuffer,
+  createTargetRenderBuffer,
+} from "./GameRenderReader";
 import { runGameFrame } from "./runGameFrame";
 import { createDefaultGameSystems } from "../systems/createDefaultGameSystems";
 
@@ -30,7 +36,9 @@ function runMovementAtRenderRate(renderFramesPerSecond: number): number {
     simulation.advanceFrame(1 / renderFramesPerSecond);
   }
 
-  return simulation.getRenderFrame().currentPlayerPosition.x;
+  const frame = createPlayerRenderBuffer();
+  simulation.renderReader.writePlayer(frame);
+  return frame.currentPosition.x;
 }
 
 interface VitalityChange {
@@ -129,8 +137,9 @@ describe("GameRuntime", () => {
       timestampMs: 5_000,
     });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
-    const positionBeforeTurn =
-      simulation.getRenderFrame().currentPlayerPosition.x;
+    const player = createPlayerRenderBuffer();
+    simulation.renderReader.writePlayer(player);
+    const positionBeforeTurn = player.currentPosition.x;
 
     simulation.dispatch({
       type: "steer-ground-move",
@@ -138,8 +147,9 @@ describe("GameRuntime", () => {
     });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    const renderState = simulation.getRenderFrame();
-    expect(renderState.currentPlayerPosition.x).toBeLessThan(
+    const renderState = createMovementRenderBuffer();
+    simulation.renderReader.writeMovement(renderState);
+    expect(renderState.movement.position.x).toBeLessThan(
       positionBeforeTurn,
     );
     expect(renderState.movement.mode).toBe("clickToPoint");
@@ -150,40 +160,120 @@ describe("GameRuntime", () => {
   it("caps catch-up at three fixed ticks and can discard the accumulator", () => {
     const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
 
-    const frame = simulation.advanceFrame(1);
-    expect(simulation.getRenderFrame().simulationTimeMs).toBeCloseTo(50, 5);
+    const frame = createPlayerRenderBuffer();
+    simulation.advanceFrame(1);
+    simulation.renderReader.writePlayer(frame);
+    expect(frame.simulationTimeMs).toBeCloseTo(50, 5);
     expect(frame.interpolationAlpha).toBeLessThan(1);
 
     simulation.resetFrameAccumulator();
-    const halfTickFrame = simulation.advanceFrame(
-      SIMULATION_TICK_SECONDS / 2,
-    );
-    expect(halfTickFrame.interpolationAlpha).toBeCloseTo(0.5, 5);
-    expect(simulation.getRenderFrame().simulationTimeMs).toBeCloseTo(50, 5);
+    simulation.advanceFrame(SIMULATION_TICK_SECONDS / 2);
+    simulation.renderReader.writePlayer(frame);
+    expect(frame.interpolationAlpha).toBeCloseTo(0.5, 5);
+    expect(frame.simulationTimeMs).toBeCloseTo(50, 5);
   });
 
-  it("keeps render state and hot-path point identities stable", () => {
+  it("writes into stable caller-owned render buffers", () => {
     const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
-    const state = simulation.getRenderFrame();
+    const state = createMovementRenderBuffer();
     const movement = state.movement;
     const position = movement.position;
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
+    simulation.renderReader.writeMovement(state);
 
-    expect(simulation.getRenderFrame()).toBe(state);
-    expect(simulation.getRenderFrame().movement).toBe(movement);
-    expect(simulation.getRenderFrame().movement.position).toBe(position);
+    expect(state.movement).toBe(movement);
+    expect(state.movement.position).toBe(position);
     expect(simulation.createUiSnapshot()).not.toBe(
       simulation.createUiSnapshot(),
     );
+  });
+
+  it("does not let mutated public render outputs change the world", () => {
+    const runtime = createDefaultGameRuntime({
+      initialTimeMs: 0,
+      performanceLoadEnabled: true,
+    });
+    runtime.dispatch({ type: "activate-ability", abilityId: "speed-boost" });
+    runtime.dispatch({ type: "activate-target", targetId: TEST_DUMMY.id });
+    runtime.dispatch({
+      type: "start-ground-move",
+      point: { x: 10, z: 0 },
+      timestampMs: 0,
+    });
+    runtime.dispatch({ type: "finish-ground-move", timestampMs: 100 });
+    runtime.advanceFrame(SIMULATION_TICK_SECONDS);
+
+    const player = createPlayerRenderBuffer();
+    const movement = createMovementRenderBuffer();
+    const target = createTargetRenderBuffer();
+    const load = createPerformanceLoadRenderBuffer();
+    runtime.renderReader.writePlayer(player);
+    runtime.renderReader.writeMovement(movement);
+    runtime.renderReader.writeTarget(target);
+    runtime.renderReader.writePerformanceLoad(load);
+    const expectedPositionX = player.currentPosition.x;
+    const expectedTargetHealth = target.snapshot.currentHealth;
+    const expectedLoadX = load.positions[0];
+
+    player.currentPosition.x = 99_999;
+    player.combat.currentHealth = -1;
+    player.effects[0].id = "mutated";
+    movement.movement.position.x = 99_999;
+    movement.targetPosition.x = 99_999;
+    target.snapshot.currentHealth = -1;
+    target.position.x = 99_999;
+    load.positions[0] = 99_999;
+
+    runtime.renderReader.writePlayer(player);
+    runtime.renderReader.writeMovement(movement);
+    runtime.renderReader.writeTarget(target);
+    runtime.renderReader.writePerformanceLoad(load);
+    expect(player.currentPosition.x).toBe(expectedPositionX);
+    expect(player.combat.currentHealth).toBeGreaterThan(0);
+    expect(player.effects[0].id).toBe("speed-boost");
+    expect(movement.movement.position.x).toBe(expectedPositionX);
+    expect(movement.targetPosition.x).toBe(TEST_DUMMY.xMeters);
+    expect(target.snapshot.currentHealth).toBe(expectedTargetHealth);
+    expect(target.position.x).toBe(TEST_DUMMY.xMeters);
+    expect(load.positions[0]).toBe(expectedLoadX);
+  });
+
+  it("keeps simultaneous runtimes and readers fully instance-local", () => {
+    const first = createDefaultGameRuntime({ initialTimeMs: 0, performanceLoadEnabled: true });
+    const second = createDefaultGameRuntime({ initialTimeMs: 0, performanceLoadEnabled: true });
+    const firstPlayer = createPlayerRenderBuffer();
+    const secondPlayer = createPlayerRenderBuffer();
+    const firstTarget = createTargetRenderBuffer();
+    const secondTarget = createTargetRenderBuffer();
+    const firstLoad = createPerformanceLoadRenderBuffer();
+    const secondLoad = createPerformanceLoadRenderBuffer();
+
+    first.dispatch({ type: "activate-ability", abilityId: "speed-boost" });
+    first.advanceFrame(SIMULATION_TICK_SECONDS);
+    second.advanceFrame(SIMULATION_TICK_SECONDS);
+    first.renderReader.writePlayer(firstPlayer);
+    second.renderReader.writePlayer(secondPlayer);
+    first.renderReader.writeTarget(firstTarget);
+    second.renderReader.writeTarget(secondTarget);
+    first.renderReader.writePerformanceLoad(firstLoad);
+    second.renderReader.writePerformanceLoad(secondLoad);
+
+    expect(firstPlayer.interpolatedPosition).not.toBe(secondPlayer.interpolatedPosition);
+    expect(firstPlayer.effects).not.toBe(secondPlayer.effects);
+    expect(firstTarget.snapshot).not.toBe(secondTarget.snapshot);
+    expect(firstLoad.positions).not.toBe(secondLoad.positions);
+    expect(firstPlayer.effects.map((effect) => effect.id)).toEqual(["speed-boost"]);
+    expect(secondPlayer.effects).toEqual([]);
   });
 
   it("starts with the player area disabled and emits no presence events", () => {
     const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
-
-    expect(simulation.getRenderFrame().playerAreaActive).toBe(false);
+    const player = createPlayerRenderBuffer();
+    simulation.renderReader.writePlayer(player);
+    expect(player.areaActive).toBe(false);
     expect(drainAreaEvents(simulation)).toEqual([]);
   });
 
@@ -195,8 +285,9 @@ describe("GameRuntime", () => {
     simulation.dispatch({ type: "toggle-player-area" });
 
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
-
-    expect(simulation.getRenderFrame().playerAreaActive).toBe(true);
+    const player = createPlayerRenderBuffer();
+    simulation.renderReader.writePlayer(player);
+    expect(player.areaActive).toBe(true);
     expect(drainAreaEvents(simulation)).toEqual([
       expect.objectContaining({
         occurredAtMs: SIMULATION_TICK_SECONDS * 1_000,
@@ -222,7 +313,9 @@ describe("GameRuntime", () => {
     simulation.dispatch({ type: "toggle-player-area" });
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
 
-    expect(simulation.getRenderFrame().playerAreaActive).toBe(false);
+    const player = createPlayerRenderBuffer();
+    simulation.renderReader.writePlayer(player);
+    expect(player.areaActive).toBe(false);
     expect(drainAreaEvents(simulation).map((event) => event.status)).toEqual([
       "deactivated",
     ]);
@@ -251,15 +344,15 @@ describe("GameRuntime", () => {
       initialTimeMs: 0,
       performanceLoadEnabled: true,
     });
-    const load = simulation.getRenderFrame().performanceLoad;
+    const load = createPerformanceLoadRenderBuffer();
+    expect(simulation.renderReader.writePerformanceLoad(load)).toBe(true);
 
-    expect(load?.activeCount).toBe(PERFORMANCE_LOAD_ACTIVE_ENTITIES);
-    expect(load?.visibleCount).toBe(PERFORMANCE_LOAD_VISIBLE_ENTITIES);
-    const positions = load?.currentPositions;
+    expect(load.activeCount).toBe(PERFORMANCE_LOAD_ACTIVE_ENTITIES);
+    expect(load.visibleCount).toBe(PERFORMANCE_LOAD_VISIBLE_ENTITIES);
+    const positions = load.positions;
     simulation.advanceFrame(SIMULATION_TICK_SECONDS);
-    expect(simulation.getRenderFrame().performanceLoad?.currentPositions).toBe(
-      positions,
-    );
+    simulation.renderReader.writePerformanceLoad(load);
+    expect(load.positions).toBe(positions);
   });
 
   it("registers systems in the behavior-preserving fixed-step order", () => {
@@ -281,8 +374,9 @@ describe("GameRuntime", () => {
       initialTimeMs: 0,
       performanceLoadEnabled: true,
     });
-    const load = runtime.getRenderFrame().performanceLoad;
-    const initialLoadX = load?.currentPositions[0];
+    const load = createPerformanceLoadRenderBuffer();
+    runtime.renderReader.writePerformanceLoad(load);
+    const initialLoadX = load.positions[0];
     runtime.dispatch({
       type: "activate-ability",
       abilityId: "speed-boost",
@@ -297,18 +391,21 @@ describe("GameRuntime", () => {
     }
 
     const snapshot = runtime.createUiSnapshot();
-    expect(runtime.getRenderFrame().simulationTimeMs).toBeCloseTo(2_000, 5);
+    const player = createPlayerRenderBuffer();
+    runtime.renderReader.writePlayer(player);
+    runtime.renderReader.writePerformanceLoad(load);
+    expect(player.simulationTimeMs).toBeCloseTo(2_000, 5);
     expect(snapshot.debug.cooldownRemainingMs).toBeLessThan(15_000);
     expect(snapshot.testDummy.currentHealth).toBeLessThan(
       snapshot.testDummy.maximumHealth,
     );
-    expect(load?.currentPositions[0]).not.toBe(initialLoadX);
+    expect(load.positions[0]).not.toBe(initialLoadX);
   });
 
   it("emits selection once and exposes the selected target in the UI snapshot", () => {
     const simulation = createDefaultGameRuntime({ initialTimeMs: 0 });
     const eventTypes: string[] = [];
-    simulation.consumeCriticalUiDirty();
+    simulation.consumeUiDirty();
     simulation.dispatch({
       type: "activate-target",
       targetId: TEST_DUMMY.id,
@@ -317,7 +414,7 @@ describe("GameRuntime", () => {
     simulation.drainEvents((event) => eventTypes.push(event.type));
 
     expect(eventTypes).toContain("target-selected");
-    expect(simulation.consumeCriticalUiDirty()).toBe(true);
+    expect(simulation.consumeUiDirty()).toBe(true);
     expect(simulation.createUiSnapshot().targetSelected).toBe(true);
   });
 

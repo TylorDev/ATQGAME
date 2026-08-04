@@ -1,39 +1,9 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
-import {
-  createGameLogStore,
-  type GameLogStore,
-} from "@/game/gameLog";
-
-const GameLogContext = createContext<GameLogStore | null>(null);
-
-interface GameLogProviderProps {
-  children: ReactNode;
-}
-
-export function GameLogProvider({ children }: GameLogProviderProps) {
-  const [store] = useState(createGameLogStore);
-
-  return (
-    <GameLogContext.Provider value={store}>
-      {children}
-    </GameLogContext.Provider>
-  );
-}
+import { useSyncExternalStore } from "react";
+import type { GameLogStore } from "@/game/gameLog";
+import { useGameUiStore } from "./GameUiContext";
 
 function useGameLogStore(): GameLogStore {
-  const store = useContext(GameLogContext);
-
-  if (!store) {
-    throw new Error("Game log hooks must be used inside GameLogProvider");
-  }
-
-  return store;
+  return useGameUiStore().gameLog;
 }
 
 export function useGameLogSnapshot() {

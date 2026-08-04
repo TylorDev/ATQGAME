@@ -7,7 +7,10 @@ export class EffectSystem implements GameSystem {
   readonly id = "effects";
 
   step(world: WorldState, context: FixedStepContext): void {
-    const boost = world.player.speedBoost.update(world.simulationTimeMs);
+    const boost = world.player.speedBoost.writeSnapshot(
+      world.simulationTimeMs,
+      world.player.speedBoostSnapshot,
+    );
     let effectsMask = 0;
     world.player.effects.length = 0;
 

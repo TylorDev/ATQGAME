@@ -6,10 +6,9 @@ export class AutoAttackSystem implements GameSystem {
   readonly id = "auto-attack";
 
   step(world: WorldState, context: FixedStepContext): void {
-    const dummyState = world.target.controller.getState();
     const canAttack =
       world.target.selected &&
-      !dummyState.isDefeated &&
+      !world.target.controller.isDefeated() &&
       isWithinAutoAttackRange(
         world.player.currentPosition,
         world.target.position,
@@ -23,6 +22,7 @@ export class AutoAttackSystem implements GameSystem {
       const result = world.target.controller.applyDamage(
         world.target.autoAttack.getDamagePerAttack(),
         world.simulationTimeMs,
+        world.target.damageResult,
       );
       context.events.push({
         type: "vitality-change",

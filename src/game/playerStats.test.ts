@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateMovementSpeedMetersPerSecond,
-  getActivePlayerEffects,
   getCurrentPlayerSpeedMetersPerSecond,
   SPEED_BOOST_MODIFIER,
   SpeedBoostController,
@@ -45,33 +44,13 @@ describe("player speed stats", () => {
     );
   });
 
-  it("exposes speed boost and burning as separate active effects", () => {
-    const speedBoost = new SpeedBoostController();
+  it("writes speed snapshots without exposing controller state", () => {
+    const controller = new SpeedBoostController();
+    controller.activate(0);
+    const snapshot = controller.getSnapshot(1_000);
+    snapshot.durationRemainingMs = -1;
 
-    speedBoost.activate(0);
-
-    expect(getActivePlayerEffects(speedBoost.getSnapshot(0), true)).toEqual([
-      expect.objectContaining({
-        id: "speed-boost",
-        kind: "buff",
-        timerProgress: 1,
-      }),
-      expect.objectContaining({
-        id: "burning",
-        kind: "debuff",
-        timerProgress: 1,
-      }),
-    ]);
+    expect(controller.getSnapshot(1_000).durationRemainingMs).toBe(4_000);
   });
 
-  it("updates the impulse ring while the buff is active and removes it on expiry", () => {
-    const speedBoost = new SpeedBoostController();
-
-    speedBoost.activate(0);
-
-    expect(getActivePlayerEffects(speedBoost.getSnapshot(2_500), false)).toEqual([
-      expect.objectContaining({ id: "speed-boost", timerProgress: 0.5 }),
-    ]);
-    expect(getActivePlayerEffects(speedBoost.getSnapshot(5_000), false)).toEqual([]);
-  });
 });

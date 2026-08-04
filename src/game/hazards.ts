@@ -52,13 +52,14 @@ export class BurningHazardController {
     deltaSeconds: number,
     isInsideHazard: boolean,
     tickIntervalSeconds: number,
+    output: BurningHazardSnapshot = { isActive: false, damageTicks: 0 },
   ): BurningHazardSnapshot {
     this.state.damageTicks = 0;
 
     if (!isInsideHazard) {
       this.elapsedInsideSeconds = 0;
       this.state.isActive = false;
-      return this.state;
+      return this.writeSnapshot(output);
     }
 
     this.state.isActive = true;
@@ -69,14 +70,16 @@ export class BurningHazardController {
     this.elapsedInsideSeconds -=
       this.state.damageTicks * tickIntervalSeconds;
 
-    return this.state;
+    return this.writeSnapshot(output);
   }
 
   getSnapshot(): BurningHazardSnapshot {
-    return { isActive: this.state.isActive, damageTicks: 0 };
+    return this.writeSnapshot({ isActive: false, damageTicks: 0 });
   }
 
-  getState(): BurningHazardSnapshot {
-    return this.state;
+  writeSnapshot(output: BurningHazardSnapshot): BurningHazardSnapshot {
+    output.isActive = this.state.isActive;
+    output.damageTicks = this.state.damageTicks;
+    return output;
   }
 }

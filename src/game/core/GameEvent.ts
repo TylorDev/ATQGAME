@@ -8,5 +8,4 @@ export type GameEvent =
   | { type: "area-presence"; payload: PublishAreaPresenceLogInput }
   | { type: "vitality-change"; receiverId: string; healthDelta: number }
   | { type: "target-selected" }
-  | { type: "target-deselected" }
-  | { type: "critical-ui-change" };
+  | { type: "target-deselected" };

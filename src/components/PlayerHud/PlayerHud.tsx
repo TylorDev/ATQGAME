@@ -1,26 +1,23 @@
+import { useMemo } from "react";
+import { useGameUiSelector, useGameUiStore } from "@/contexts/GameUiContext";
 import { HUD_KEYBINDINGS } from "@/game/keybindings";
-import type { PlayerHudState, TestDummySnapshot } from "@/game/types";
+import { resolveGraphicsQuality } from "@/game/graphicsQuality";
 import styles from "./PlayerHud.module.scss";
-
-interface PlayerHudProps {
-  state: PlayerHudState;
-  testDummy: TestDummySnapshot | null;
-  blurEnabled: boolean;
-  visible: boolean;
-  onHide: () => void;
-}
 
 function formatHealth(health: number): string {
   return Math.round(health).toLocaleString("es-ES");
 }
 
-export function PlayerHud({
-  state,
-  testDummy,
-  blurEnabled,
-  visible,
-  onHide,
-}: PlayerHudProps) {
+export function PlayerHud() {
+  const store = useGameUiStore();
+  const state = useGameUiSelector((snapshot) => snapshot.runtime.playerHud);
+  const testDummy = useGameUiSelector((snapshot) => snapshot.runtime.target);
+  const visible = useGameUiSelector((snapshot) => snapshot.visibility.hud);
+  const graphics = useGameUiSelector((snapshot) => snapshot.preferences.graphics);
+  const blurEnabled = useMemo(
+    () => resolveGraphicsQuality(graphics, window.devicePixelRatio).hudBlur,
+    [graphics],
+  );
   const healthPercent =
     state.maximumHealth > 0
       ? Math.min((state.currentHealth / state.maximumHealth) * 100, 100)
@@ -45,7 +42,7 @@ export function PlayerHud({
               aria-keyshortcuts="H"
               aria-label="Ocultar detalles del jugador y del muñeco"
               className={styles.hide}
-              onClick={onHide}
+              onClick={store.hideHud}
               title="Ocultar detalles · H"
               type="button"
             >

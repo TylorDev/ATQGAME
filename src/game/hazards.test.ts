@@ -62,4 +62,14 @@ describe("burning hazard", () => {
     expect(advanceInside(controller, 39)).toBe(0);
     expect(advanceInside(controller, 1)).toBe(1);
   });
+
+  it("does not expose its reusable internal step state", () => {
+    const controller = new BurningHazardController();
+    const first = controller.step(0.05, true, 2);
+    first.isActive = false;
+    const second = controller.step(0.05, true, 2);
+
+    expect(second).not.toBe(first);
+    expect(second.isActive).toBe(true);
+  });
 });

@@ -2,7 +2,7 @@ import {
   ARENA_HALF_SIZE_METERS,
   ARRIVAL_DISTANCE_METERS,
   HOLD_DELAY_MS,
-  MAX_FRAME_DELTA_SECONDS,
+  MAX_MOVEMENT_STEP_SECONDS,
   MIN_DIRECTION_LENGTH_METERS,
   PLAYER_BASE_SPEED_METERS_PER_SECOND,
   PLAYER_RADIUS_METERS,
@@ -225,7 +225,7 @@ export class MovementController {
     setPoint(this.startingPosition, this.position);
     const safeDeltaSeconds = Math.min(
       Math.max(deltaSeconds, 0),
-      MAX_FRAME_DELTA_SECONDS,
+      MAX_MOVEMENT_STEP_SECONDS,
     );
 
     if (this.pointerDown) {
@@ -353,12 +353,12 @@ export class MovementController {
     this.finishStep(safeDeltaSeconds);
   }
 
-  getState(): MovementStateView {
-    return this.state;
-  }
-
   getSnapshot(): MovementSnapshot {
     return this.writeSnapshot();
+  }
+
+  writePosition(output: GroundPoint): void {
+    setPoint(output, this.position);
   }
 
   writeSnapshot(target?: MovementSnapshot): MovementSnapshot {

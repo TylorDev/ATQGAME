@@ -1,4 +1,4 @@
-import type { PlayerHudState } from "@/game/types";
+import { useGameUiSelector, useGameUiStore } from "@/contexts/GameUiContext";
 import {
   getActivePlayerStats,
   PLAYER_PLACEHOLDER_STAT_CATEGORIES,
@@ -6,11 +6,6 @@ import {
 } from "@/game/playerPresentation";
 
 import styles from "./PlayerStatsPanel.module.scss";
-
-interface PlayerStatsPanelProps {
-  playerState: PlayerHudState;
-  onClose: () => void;
-}
 
 function formatValue(stat: PlayerStatPresentation) {
   const value = Number.isInteger(stat.value)
@@ -38,8 +33,13 @@ function StatRow({ stat }: { stat: PlayerStatPresentation }) {
   );
 }
 
-export function PlayerStatsPanel({ playerState, onClose }: PlayerStatsPanelProps) {
+export function PlayerStatsPanel() {
+  const store = useGameUiStore();
+  const isOpen = useGameUiSelector((state) => state.visibility.stats);
+  const playerState = useGameUiSelector((state) => state.runtime.playerHud);
   const activeStats = getActivePlayerStats(playerState.maximumHealth);
+
+  if (!isOpen) return null;
 
   return (
     <div className={styles.overlay}>
@@ -53,7 +53,7 @@ export function PlayerStatsPanel({ playerState, onClose }: PlayerStatsPanelProps
             <p className={styles.eyebrow}>Personaje · Base</p>
             <h2 id="player-stats-title">Stats del jugador</h2>
           </div>
-          <button aria-label="Cerrar stats del jugador" className={styles.close} onClick={onClose} type="button">
+          <button aria-label="Cerrar stats del jugador" className={styles.close} onClick={store.closeStats} type="button">
             ×
           </button>
         </header>

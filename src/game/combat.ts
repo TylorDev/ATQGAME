@@ -20,6 +20,15 @@ export interface DamageResult {
   snapshot: PlayerCombatSnapshot;
 }
 
+export function createDamageResult(): DamageResult {
+  return {
+    effectiveDamage: 0,
+    appliedDamage: 0,
+    didDie: false,
+    snapshot: { currentHealth: 0, maximumHealth: 0, defensePercent: 0 },
+  };
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -80,7 +89,10 @@ export class PlayerVitalityController {
     return this.getSnapshot();
   }
 
-  applyDamage(baseDamage: number): DamageResult {
+  applyDamage(
+    baseDamage: number,
+    output: DamageResult = createDamageResult(),
+  ): DamageResult {
     const safeBaseDamage = Number.isFinite(baseDamage)
       ? Math.max(0, baseDamage)
       : 0;
@@ -94,19 +106,25 @@ export class PlayerVitalityController {
       ? this.state.maximumHealth
       : remainingHealth;
 
-    return {
-      effectiveDamage,
-      appliedDamage,
-      didDie,
-      snapshot: this.getSnapshot(),
-    };
+    output.effectiveDamage = effectiveDamage;
+    output.appliedDamage = appliedDamage;
+    output.didDie = didDie;
+    this.writeSnapshot(output.snapshot);
+    return output;
   }
 
   getSnapshot(): PlayerCombatSnapshot {
-    return { ...this.state };
+    return this.writeSnapshot({
+      currentHealth: 0,
+      maximumHealth: 0,
+      defensePercent: 0,
+    });
   }
 
-  getState(): PlayerCombatSnapshot {
-    return this.state;
+  writeSnapshot(output: PlayerCombatSnapshot): PlayerCombatSnapshot {
+    output.currentHealth = this.state.currentHealth;
+    output.maximumHealth = this.state.maximumHealth;
+    output.defensePercent = this.state.defensePercent;
+    return output;
   }
 }

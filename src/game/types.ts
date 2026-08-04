@@ -7,32 +7,32 @@ export interface GroundPoint {
 }
 
 export interface ObstacleDefinition {
-  id: string;
-  xMeters: number;
-  zMeters: number;
-  widthMeters: number;
-  depthMeters: number;
-  heightMeters: number;
+  readonly id: string;
+  readonly xMeters: number;
+  readonly zMeters: number;
+  readonly widthMeters: number;
+  readonly depthMeters: number;
+  readonly heightMeters: number;
 }
 
 export interface GroundHazardDefinition {
-  id: string;
-  displayName: string;
-  xMeters: number;
-  zMeters: number;
-  widthMeters: number;
-  depthMeters: number;
-  damagePerTick: number;
-  tickIntervalSeconds: number;
+  readonly id: string;
+  readonly displayName: string;
+  readonly xMeters: number;
+  readonly zMeters: number;
+  readonly widthMeters: number;
+  readonly depthMeters: number;
+  readonly damagePerTick: number;
+  readonly tickIntervalSeconds: number;
 }
 
 export interface TestDummyDefinition {
-  id: string;
-  displayName: string;
-  xMeters: number;
-  zMeters: number;
-  footprintRadiusMeters: number;
-  maximumHealth: number;
+  readonly id: string;
+  readonly displayName: string;
+  readonly xMeters: number;
+  readonly zMeters: number;
+  readonly footprintRadiusMeters: number;
+  readonly maximumHealth: number;
 }
 
 export interface TestDummySnapshot {

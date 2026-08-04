@@ -5,29 +5,28 @@ import type { GameEvent } from "./GameEvent";
 import type { GameplayAction } from "./GameplayAction";
 import {
   createGameUiSnapshot,
-  GameUiSnapshotMask,
   type GameUiSnapshot,
 } from "./GameSnapshot";
 import type { FixedStepContext, GameSystem } from "./GameSystem";
-import {
-  createRenderFrame,
-  syncRenderFrame,
-  type RenderFrame,
-} from "./RenderFrame";
+import { GameRenderReader } from "./GameRenderReader";
 import type { WorldState } from "./WorldState";
 
 export class GameRuntime {
   private readonly clock = new GameClock();
   private readonly commands = new CommandBuffer();
   private readonly events = new EventBuffer();
-  private readonly renderFrame: RenderFrame;
+  readonly renderReader: GameRenderReader;
   private readonly fixedStepContext: FixedStepContext;
+  private interpolationAlpha = 0;
 
   constructor(
     private readonly world: WorldState,
     private readonly systems: readonly GameSystem[],
   ) {
-    this.renderFrame = createRenderFrame(world);
+    this.renderReader = new GameRenderReader(
+      world,
+      () => this.interpolationAlpha,
+    );
     this.fixedStepContext = {
       deltaSeconds: SIMULATION_TICK_SECONDS,
       commands: this.commands,
@@ -40,36 +39,28 @@ export class GameRuntime {
     this.commands.dispatch(action);
   }
 
-  advanceFrame(deltaSeconds: number): Readonly<RenderFrame> {
-    const interpolationAlpha = this.clock.advanceFrame(
+  advanceFrame(deltaSeconds: number): void {
+    this.interpolationAlpha = this.clock.advanceFrame(
       deltaSeconds,
       () => this.stepFixed(),
     );
-    syncRenderFrame(this.renderFrame, this.world, interpolationAlpha);
-    return this.renderFrame;
-  }
-
-  getRenderFrame(): Readonly<RenderFrame> {
-    return this.renderFrame;
   }
 
   resetFrameAccumulator(): void {
     this.clock.resetAccumulator();
   }
 
-  createUiSnapshot(
-    mask: GameUiSnapshotMask = GameUiSnapshotMask.All,
-  ): GameUiSnapshot {
-    return createGameUiSnapshot(this.world, mask);
+  createUiSnapshot(): GameUiSnapshot {
+    return createGameUiSnapshot(this.world);
   }
 
   drainEvents(visitor: (event: GameEvent) => void): void {
     this.events.drain(visitor);
   }
 
-  consumeCriticalUiDirty(): boolean {
-    const wasDirty = this.world.criticalUiDirty;
-    this.world.criticalUiDirty = false;
+  consumeUiDirty(): boolean {
+    const wasDirty = this.world.uiDirty;
+    this.world.uiDirty = false;
     return wasDirty;
   }
 
@@ -82,10 +73,6 @@ export class GameRuntime {
   }
 
   private markCriticalUiChange(): void {
-    if (!this.world.criticalUiDirty) {
-      this.events.push({ type: "critical-ui-change" });
-    }
-
-    this.world.criticalUiDirty = true;
+    this.world.uiDirty = true;
   }
 }

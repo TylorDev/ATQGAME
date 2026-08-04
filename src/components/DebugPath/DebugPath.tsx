@@ -10,6 +10,7 @@ import { GAME_FRAME_PRIORITY } from "@/components/GameCanvas/framePriorities";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
 import { HOLD_DELAY_MS } from "@/game/constants";
 import { isHeldGroundProjectionActive } from "@/game/pointerProjection";
+import { createMovementRenderBuffer } from "@/game/core/GameRenderReader";
 
 interface DebugPathProps {
   visible: boolean;
@@ -43,6 +44,7 @@ function writePathIfChanged(
 export function DebugPath({ visible }: DebugPathProps) {
   const { input, runtime } = useGameRuntimeServices();
   const pathLineRef = useRef<LineSegments>(null);
+  const renderBufferRef = useRef(createMovementRenderBuffer());
   const pathGeometryRef = useRef<BufferGeometry>(null);
   const selectedPathLineRef = useRef<LineSegments>(null);
   const selectedPathGeometryRef = useRef<BufferGeometry>(null);
@@ -59,7 +61,8 @@ export function DebugPath({ visible }: DebugPathProps) {
   );
 
   useFrame(() => {
-    const frame = runtime.getRenderFrame();
+    const frame = renderBufferRef.current;
+    runtime.renderReader.writeMovement(frame);
     const timestampMs = performance.now();
     const showClickPath =
       visible &&
@@ -88,7 +91,7 @@ export function DebugPath({ visible }: DebugPathProps) {
     }
 
     if (showPath && pathTarget) {
-      const position = frame.interpolatedPlayerPosition;
+      const position = frame.playerPosition;
       pathPositions[0] = position.x;
       pathPositions[1] = 0.07;
       pathPositions[2] = position.z;
@@ -115,7 +118,7 @@ export function DebugPath({ visible }: DebugPathProps) {
     }
 
     if (frame.targetSelected) {
-      const position = frame.interpolatedPlayerPosition;
+      const position = frame.playerPosition;
       selectedPathPositions[0] = position.x;
       selectedPathPositions[1] = 0.09;
       selectedPathPositions[2] = position.z;

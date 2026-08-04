@@ -90,4 +90,16 @@ describe("test dummy combat", () => {
       isDefeated: false,
     });
   });
+
+  it("returns detached snapshots and per-call damage results", () => {
+    const controller = new TestDummyController(definition);
+    const snapshot = controller.getSnapshot(0);
+    snapshot.currentHealth = -1;
+    const first = controller.applyDamage(1, 0);
+    const second = controller.applyDamage(1, 1);
+    first.appliedDamage = 99;
+
+    expect(first).not.toBe(second);
+    expect(controller.getSnapshot(1).currentHealth).toBe(98);
+  });
 });

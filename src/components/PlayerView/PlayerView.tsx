@@ -9,12 +9,14 @@ import {
 import { PlayerArea } from "@/components/PlayerArea/PlayerArea";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
 import { resolvePointerFacingYaw } from "@/game/playerOrientation";
+import { createPlayerRenderBuffer } from "@/game/core/GameRenderReader";
 
 const PLAYER_OVERHEAD_Y = 2.38;
 
 export function PlayerView() {
   const { input, overheadRegistry, runtime } = useGameRuntimeServices();
   const groupRef = useRef<Group>(null);
+  const renderBufferRef = useRef(createPlayerRenderBuffer());
   const playerAreaRef = useRef<Mesh>(null);
   const registrationRef = useRef<OverheadStatusRegistration | null>(null);
   const overheadUpdateRef = useRef<OverheadStatusUpdate>({
@@ -38,11 +40,12 @@ export function PlayerView() {
   }, [overheadRegistry]);
 
   useFrame(() => {
-    const frame = runtime.getRenderFrame();
-    const position = frame.interpolatedPlayerPosition;
+    const frame = renderBufferRef.current;
+    runtime.renderReader.writePlayer(frame);
+    const position = frame.interpolatedPosition;
 
     if (playerAreaRef.current) {
-      playerAreaRef.current.visible = frame.playerAreaActive;
+      playerAreaRef.current.visible = frame.areaActive;
     }
 
     const group = groupRef.current;
@@ -63,9 +66,9 @@ export function PlayerView() {
       const update = overheadUpdateRef.current;
       update.x = position.x;
       update.z = position.z;
-      update.currentHealth = frame.playerCombat.currentHealth;
-      update.maximumHealth = frame.playerCombat.maximumHealth;
-      update.effects = frame.playerEffects;
+      update.currentHealth = frame.combat.currentHealth;
+      update.maximumHealth = frame.combat.maximumHealth;
+      update.effects = frame.effects;
       overheadRegistry.update(registration, update);
     }
   }, GAME_FRAME_PRIORITY.presentation);

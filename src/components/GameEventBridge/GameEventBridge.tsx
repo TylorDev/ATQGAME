@@ -7,20 +7,13 @@ import {
 } from "@/contexts/GameLogContext";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
 import type { GameEvent } from "@/game/core/GameEvent";
-import type { TestDummySnapshot } from "@/game/types";
 
 type DeferredGameLogEvent = Extract<
   GameEvent,
   { type: "damage" } | { type: "area-presence" }
 >;
 
-interface GameEventBridgeProps {
-  onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
-}
-
-export function GameEventBridge({
-  onTestDummyHudChange,
-}: GameEventBridgeProps) {
+export function GameEventBridge() {
   const { overheadRegistry, runtime } = useGameRuntimeServices();
   const publishAreaPresence = usePublishAreaPresenceLog();
   const publishDamage = usePublishDamageLog();
@@ -71,11 +64,9 @@ export function GameEventBridge({
         return;
       }
 
-      if (event.type === "target-deselected") {
-        onTestDummyHudChange(null);
-      }
+      // Selection is projected by UiSnapshotPublisher from the runtime snapshot.
     },
-    [deferGameLogEvent, onTestDummyHudChange, overheadRegistry],
+    [deferGameLogEvent, overheadRegistry],
   );
 
   useFrame(() => {

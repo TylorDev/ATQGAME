@@ -1,5 +1,6 @@
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as Slider from "@radix-ui/react-slider";
+import { useGameUiSelector, useGameUiStore } from "@/contexts/GameUiContext";
 import {
   CAMERA_DISTANCE_MAX,
   CAMERA_DISTANCE_MIN,
@@ -7,7 +8,6 @@ import {
   CAMERA_PITCH_MAX,
   CAMERA_PITCH_MIN,
   CAMERA_PITCH_STEP,
-  type CameraSettings,
 } from "@/game/camera";
 import {
   PLAYER_DEFENSE_PERCENT_MAX,
@@ -18,18 +18,7 @@ import {
   PLAYER_MAXIMUM_HEALTH_STEP,
 } from "@/game/combat";
 import type { PlayerDebugStats } from "@/game/playerStats";
-import type { PlayerCombatSettings } from "@/game/types";
 import styles from "./DebugPanel.module.scss";
-
-interface DebugPanelProps {
-  enabled: boolean;
-  settings: CameraSettings;
-  playerStats: PlayerDebugStats;
-  combatSettings: PlayerCombatSettings;
-  onEnabledChange: (enabled: boolean) => void;
-  onSettingsChange: (settings: CameraSettings) => void;
-  onCombatSettingsChange: (settings: PlayerCombatSettings) => void;
-}
 
 interface SliderFieldProps {
   label: string;
@@ -125,15 +114,12 @@ function PlayerStats({ stats }: { stats: PlayerDebugStats }) {
   );
 }
 
-export function DebugPanel({
-  enabled,
-  settings,
-  playerStats,
-  combatSettings,
-  onEnabledChange,
-  onSettingsChange,
-  onCombatSettingsChange,
-}: DebugPanelProps) {
+export function DebugPanel() {
+  const store = useGameUiStore();
+  const enabled = useGameUiSelector((state) => state.visibility.debug);
+  const settings = useGameUiSelector((state) => state.preferences.camera);
+  const combatSettings = useGameUiSelector((state) => state.preferences.combat);
+  const playerStats = useGameUiSelector((state) => state.runtime.debug);
   return (
     <aside className={styles.panel} aria-label="Calibración y combate">
       <div className={styles.header}>
@@ -147,7 +133,7 @@ export function DebugPanel({
             id="debug-mode"
             className={styles.checkbox}
             checked={enabled}
-            onCheckedChange={(checked) => onEnabledChange(checked === true)}
+            onCheckedChange={(checked) => store.setDebugVisible(checked === true)}
           >
             <Checkbox.Indicator className={styles.indicator}>✓</Checkbox.Indicator>
           </Checkbox.Root>
@@ -168,7 +154,7 @@ export function DebugPanel({
               maximum={PLAYER_MAXIMUM_HEALTH_MAX}
               step={PLAYER_MAXIMUM_HEALTH_STEP}
               onChange={(maximumHealth) =>
-                onCombatSettingsChange({ ...combatSettings, maximumHealth })
+                store.setCombat({ ...combatSettings, maximumHealth })
               }
             />
             <SliderField
@@ -179,7 +165,7 @@ export function DebugPanel({
               maximum={PLAYER_DEFENSE_PERCENT_MAX}
               step={PLAYER_DEFENSE_PERCENT_STEP}
               onChange={(defensePercent) =>
-                onCombatSettingsChange({ ...combatSettings, defensePercent })
+                store.setCombat({ ...combatSettings, defensePercent })
               }
             />
           </section>
@@ -191,7 +177,7 @@ export function DebugPanel({
             maximum={CAMERA_DISTANCE_MAX}
             step={CAMERA_DISTANCE_STEP}
             onChange={(distance) =>
-              onSettingsChange({ ...settings, distance })
+              store.setCamera({ ...settings, distance })
             }
           />
           <SliderField
@@ -202,7 +188,7 @@ export function DebugPanel({
             maximum={CAMERA_PITCH_MAX}
             step={CAMERA_PITCH_STEP}
             onChange={(pitchDegrees) =>
-              onSettingsChange({ ...settings, pitchDegrees })
+              store.setCamera({ ...settings, pitchDegrees })
             }
           />
           <p className={styles.note}>La trayectoria muestra el destino pendiente.</p>

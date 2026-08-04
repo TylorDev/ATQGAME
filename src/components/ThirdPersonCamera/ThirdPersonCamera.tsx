@@ -9,6 +9,7 @@ import {
   type CameraSettings,
 } from "@/game/camera";
 import { CAMERA_DAMPING } from "@/game/constants";
+import { createPlayerRenderBuffer } from "@/game/core/GameRenderReader";
 
 interface ThirdPersonCameraProps {
   settings: CameraSettings;
@@ -23,19 +24,22 @@ export function ThirdPersonCamera({ settings }: ThirdPersonCameraProps) {
   }, [settings.distance, settings.pitchDegrees]);
   const desiredPosition = useMemo(() => new Vector3(), []);
   const cameraTarget = useMemo(() => new Vector3(), []);
+  const renderBuffer = useMemo(() => createPlayerRenderBuffer(), []);
 
   useEffect(() => {
-    const position = runtime.getRenderFrame().interpolatedPlayerPosition;
+    runtime.renderReader.writePlayer(renderBuffer);
+    const position = renderBuffer.interpolatedPosition;
     camera.position.set(
       position.x + cameraOffset.x,
       cameraOffset.y,
       position.z + cameraOffset.z,
     );
     camera.lookAt(position.x, CAMERA_TARGET_HEIGHT, position.z);
-  }, [camera, cameraOffset, runtime]);
+  }, [camera, cameraOffset, renderBuffer, runtime]);
 
   useFrame((_, delta) => {
-    const position = runtime.getRenderFrame().interpolatedPlayerPosition;
+    runtime.renderReader.writePlayer(renderBuffer);
+    const position = renderBuffer.interpolatedPosition;
     desiredPosition.set(position.x, 0, position.z).add(cameraOffset);
     const cameraBlend = 1 - Math.exp(-CAMERA_DAMPING * delta);
     camera.position.lerp(desiredPosition, cameraBlend);

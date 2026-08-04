@@ -8,6 +8,7 @@ import {
 } from "@/components/OverheadStatus/OverheadStatusSystem";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
 import type { TestDummyDefinition } from "@/game/types";
+import { createTargetRenderBuffer } from "@/game/core/GameRenderReader";
 
 const NO_ACTIVE_EFFECTS = [] as const;
 
@@ -19,6 +20,7 @@ export function TestDummyView({ definition }: TestDummyViewProps) {
   const { overheadRegistry, runtime, targetObjectRef } =
     useGameRuntimeServices();
   const bodyMaterialRef = useRef<MeshStandardMaterial>(null);
+  const renderBufferRef = useRef(createTargetRenderBuffer());
   const selectionRingRef = useRef<Mesh>(null);
   const registrationRef = useRef<OverheadStatusRegistration | null>(null);
   const overheadUpdateRef = useRef<OverheadStatusUpdate>({
@@ -45,11 +47,12 @@ export function TestDummyView({ definition }: TestDummyViewProps) {
   }, [definition.id, overheadRegistry]);
 
   useFrame(() => {
-    const frame = runtime.getRenderFrame();
-    const state = frame.testDummy;
+    const frame = renderBufferRef.current;
+    runtime.renderReader.writeTarget(frame);
+    const state = frame.snapshot;
 
     if (selectionRingRef.current) {
-      selectionRingRef.current.visible = frame.targetSelected;
+      selectionRingRef.current.visible = frame.selected;
     }
 
     if (

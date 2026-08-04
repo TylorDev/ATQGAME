@@ -7,6 +7,7 @@ import {
   type OverheadStatusUpdate,
 } from "@/components/OverheadStatus/OverheadStatusSystem";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
+import { createPerformanceLoadRenderBuffer } from "@/game/core/GameRenderReader";
 
 const NO_EFFECTS = [] as const;
 
@@ -19,6 +20,7 @@ export function PerformanceLoadView({
 }: PerformanceLoadViewProps) {
   const { overheadRegistry, runtime } = useGameRuntimeServices();
   const meshRef = useRef<InstancedMesh>(null);
+  const renderBufferRef = useRef(createPerformanceLoadRenderBuffer());
   const objectRef = useRef(new Object3D());
   const registrationsRef = useRef<OverheadStatusRegistration[]>([]);
   const overheadUpdateRef = useRef<OverheadStatusUpdate>({
@@ -54,25 +56,17 @@ export function PerformanceLoadView({
 
   useFrame(() => {
     const mesh = meshRef.current;
-    const frame = runtime.getRenderFrame();
-    const load = frame.performanceLoad;
+    const load = renderBufferRef.current;
+    const hasLoad = runtime.renderReader.writePerformanceLoad(load);
 
-    if (!mesh || !load) {
+    if (!mesh || !hasLoad) {
       return;
     }
 
     for (let index = 0; index < load.visibleCount; index += 1) {
       const positionIndex = index * 2;
-      const x =
-        load.previousPositions[positionIndex] +
-        (load.currentPositions[positionIndex] -
-          load.previousPositions[positionIndex]) *
-          frame.interpolationAlpha;
-      const z =
-        load.previousPositions[positionIndex + 1] +
-        (load.currentPositions[positionIndex + 1] -
-          load.previousPositions[positionIndex + 1]) *
-          frame.interpolationAlpha;
+      const x = load.positions[positionIndex];
+      const z = load.positions[positionIndex + 1];
       const object = objectRef.current;
       object.position.set(x, 0.72, z);
       object.rotation.y = index * 0.37;

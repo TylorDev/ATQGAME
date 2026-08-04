@@ -75,4 +75,14 @@ describe("PlayerVitalityController", () => {
     expect(result.appliedDamage).toBe(100);
     expect(result.didDie).toBe(true);
   });
+
+  it("returns snapshots and damage results detached from internal state", () => {
+    const controller = new PlayerVitalityController({ maximumHealth: 100, defensePercent: 0 });
+    const snapshot = controller.getSnapshot();
+    snapshot.currentHealth = -1;
+    const result = controller.applyDamage(10);
+    result.snapshot.currentHealth = -1;
+
+    expect(controller.getSnapshot().currentHealth).toBe(90);
+  });
 });

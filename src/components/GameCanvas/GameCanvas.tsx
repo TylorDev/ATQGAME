@@ -11,6 +11,7 @@ import { BrowserGameInput } from "@/components/BrowserGameInput/BrowserGameInput
 import { DebugPath } from "@/components/DebugPath/DebugPath";
 import { GameEventBridge } from "@/components/GameEventBridge/GameEventBridge";
 import { GameFrameRunner } from "@/components/GameFrameRunner/GameFrameRunner";
+import { RuntimeInputBridge } from "@/components/RuntimeInputBridge/RuntimeInputBridge";
 import {
   OverheadStatusLayer,
   OverheadStatusRegistry,
@@ -27,31 +28,13 @@ import {
   type GameInputFrameState,
   type GameRuntimeServices,
 } from "@/contexts/GameRuntimeContext";
-import type { CameraSettings } from "@/game/camera";
+import { useGameUiSelector } from "@/contexts/GameUiContext";
 import { TEST_DUMMY } from "@/game/constants";
 import { createDefaultGameRuntime } from "@/game/core/createDefaultGameRuntime";
 import { PERFORMANCE_LOAD_VISIBLE_ENTITIES } from "@/game/core/PerformanceLoadState";
-import type { ResolvedGraphicsQuality } from "@/game/graphicsQuality";
-import type { PlayerDebugStats } from "@/game/playerStats";
-import type {
-  PlayerCombatSettings,
-  PlayerHudState,
-  TestDummySnapshot,
-} from "@/game/types";
+import { resolveGraphicsQuality } from "@/game/graphicsQuality";
 import { Arena } from "./Arena";
 import styles from "./GameCanvas.module.scss";
-
-interface GameCanvasProps {
-  cameraSettings: CameraSettings;
-  combatSettings: PlayerCombatSettings;
-  debugVisible: boolean;
-  playerName: string;
-  quality: ResolvedGraphicsQuality;
-  onDebugStatsChange: (stats: PlayerDebugStats) => void;
-  onPlayerHudChange: (state: PlayerHudState) => void;
-  onTestDummyHudChange: (state: TestDummySnapshot | null) => void;
-  onCameraDistanceChange: (distanceDeltaMeters: number) => void;
-}
 
 function isPerformanceModeEnabled(): boolean {
   return (
@@ -72,17 +55,17 @@ function createInputFrameState(): GameInputFrameState {
   };
 }
 
-function GameCanvasComponent({
-  cameraSettings,
-  combatSettings,
-  debugVisible,
-  playerName,
-  quality,
-  onDebugStatsChange,
-  onPlayerHudChange,
-  onTestDummyHudChange,
-  onCameraDistanceChange,
-}: GameCanvasProps) {
+function GameCanvasComponent() {
+  const cameraSettings = useGameUiSelector((state) => state.preferences.camera);
+  const combatSettings = useGameUiSelector((state) => state.preferences.combat);
+  const playerName = useGameUiSelector((state) => state.preferences.playerName);
+  const graphics = useGameUiSelector((state) => state.preferences.graphics);
+  const debugEnabled = useGameUiSelector((state) => state.visibility.debug);
+  const quality = useMemo(
+    () => resolveGraphicsQuality(graphics, window.devicePixelRatio),
+    [graphics],
+  );
+  const debugVisible = import.meta.env.DEV && debugEnabled;
   const [performanceMode] = useState(isPerformanceModeEnabled);
   const [runtime] = useState(() =>
     createDefaultGameRuntime({
@@ -158,20 +141,12 @@ function GameCanvasComponent({
           <DebugPath visible={debugVisible} />
           <OverheadStatusLayer registry={overheadRegistry} />
 
-          <BrowserGameInput
-            onCameraDistanceChange={onCameraDistanceChange}
-          />
+          <BrowserGameInput />
+          <RuntimeInputBridge />
           <GameFrameRunner />
           <ThirdPersonCamera settings={cameraSettings} />
-          <GameEventBridge
-            onTestDummyHudChange={onTestDummyHudChange}
-          />
-          <UiSnapshotPublisher
-            debugVisible={debugVisible}
-            onDebugStatsChange={onDebugStatsChange}
-            onPlayerHudChange={onPlayerHudChange}
-            onTestDummyHudChange={onTestDummyHudChange}
-          />
+          <GameEventBridge />
+          <UiSnapshotPublisher />
           <OverheadFrameBridge />
           <PerformanceTuner
             performanceMode={performanceMode}

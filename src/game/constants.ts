@@ -23,7 +23,8 @@ export const TARGET_DESELECT_DISTANCE_METERS = 50;
 export const HOLD_DELAY_MS = 180;
 export const ARRIVAL_DISTANCE_METERS = 0.08;
 export const MIN_DIRECTION_LENGTH_METERS = 0.025;
-export const MAX_FRAME_DELTA_SECONDS = 0.05;
+/** Caps direct MovementController steps; GameClock owns backlog clamping. */
+export const MAX_MOVEMENT_STEP_SECONDS = 0.05;
 export const CAMERA_DAMPING = 7;
 
 export const BURNING_TILE: Readonly<GroundHazardDefinition> = {

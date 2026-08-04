@@ -15,8 +15,6 @@ export const DPS_WINDOW_SECONDS = 1;
 const TIME_EPSILON_SECONDS = 1e-6;
 const INITIAL_DAMAGE_BUFFER_CAPACITY = 16;
 
-export interface TestDummyStateView extends TestDummySnapshot {}
-
 export interface TestDummyDamageResult {
   appliedDamage: number;
   didDefeat: boolean;
@@ -119,12 +117,7 @@ export class TestDummyController {
   private readonly damageWindow = new RollingDamageWindow(
     DPS_WINDOW_SECONDS * 1_000,
   );
-  private readonly state: TestDummyStateView;
-  private readonly damageResult: TestDummyDamageResult = {
-    appliedDamage: 0,
-    didDefeat: false,
-    didApplyDamage: false,
-  };
+  private readonly state: TestDummySnapshot;
 
   constructor(private readonly definition: TestDummyDefinition) {
     this.state = {
@@ -139,15 +132,23 @@ export class TestDummyController {
     };
   }
 
-  applyDamage(damage: number, timestampMs: number): TestDummyDamageResult {
+  applyDamage(
+    damage: number,
+    timestampMs: number,
+    output: TestDummyDamageResult = {
+      appliedDamage: 0,
+      didDefeat: false,
+      didApplyDamage: false,
+    },
+  ): TestDummyDamageResult {
     this.updateDamagePerSecond(timestampMs);
     const safeDamage = sanitizeDamage(damage);
-    this.damageResult.appliedDamage = 0;
-    this.damageResult.didDefeat = false;
-    this.damageResult.didApplyDamage = false;
+    output.appliedDamage = 0;
+    output.didDefeat = false;
+    output.didApplyDamage = false;
 
     if (this.state.isDefeated || safeDamage === 0) {
-      return this.damageResult;
+      return output;
     }
 
     const appliedDamage = Math.min(safeDamage, this.state.currentHealth);
@@ -165,10 +166,10 @@ export class TestDummyController {
         TEST_DUMMY_RESPAWN_DURATION_SECONDS;
     }
 
-    this.damageResult.appliedDamage = appliedDamage;
-    this.damageResult.didDefeat = didDefeat;
-    this.damageResult.didApplyDamage = true;
-    return this.damageResult;
+    output.appliedDamage = appliedDamage;
+    output.didDefeat = didDefeat;
+    output.didApplyDamage = true;
+    return output;
   }
 
   step(deltaSeconds: number, timestampMs: number): boolean {
@@ -191,14 +192,6 @@ export class TestDummyController {
     return true;
   }
 
-  getState(timestampMs?: number): TestDummyStateView {
-    if (timestampMs !== undefined) {
-      this.updateDamagePerSecond(timestampMs);
-    }
-
-    return this.state;
-  }
-
   getSnapshot(timestampMs: number): TestDummySnapshot {
     this.updateDamagePerSecond(timestampMs);
     return this.writeSnapshot();
@@ -215,6 +208,10 @@ export class TestDummyController {
     snapshot.isDefeated = this.state.isDefeated;
     snapshot.respawnRemainingSeconds = this.state.respawnRemainingSeconds;
     return snapshot;
+  }
+
+  isDefeated(): boolean {
+    return this.state.isDefeated;
   }
 
   private updateDamagePerSecond(timestampMs: number): void {

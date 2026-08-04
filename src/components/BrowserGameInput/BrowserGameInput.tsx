@@ -8,24 +8,15 @@ import {
 } from "three";
 import { GAME_FRAME_PRIORITY } from "@/components/GameCanvas/framePriorities";
 import { useGameRuntimeServices } from "@/contexts/GameRuntimeContext";
+import { useInputRouter } from "@/contexts/InputRouterContext";
 import { CAMERA_WHEEL_ZOOM_STEP_METERS } from "@/game/camera";
 import { TEST_DUMMY } from "@/game/constants";
-import {
-  isEditableEventTarget,
-  PLAYER_AREA_KEYBINDING,
-  SPEED_BOOST_KEYBINDING,
-} from "@/game/keybindings";
 import { isGroundProjectionActive } from "@/game/pointerProjection";
 import type { GroundPoint } from "@/game/types";
 
-interface BrowserGameInputProps {
-  onCameraDistanceChange: (distanceDeltaMeters: number) => void;
-}
-
-export function BrowserGameInput({
-  onCameraDistanceChange,
-}: BrowserGameInputProps) {
-  const { input, runtime, targetObjectRef } = useGameRuntimeServices();
+export function BrowserGameInput() {
+  const { input, targetObjectRef } = useGameRuntimeServices();
+  const router = useInputRouter();
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new Raycaster(), []);
   const groundPlane = useMemo(
@@ -34,6 +25,8 @@ export function BrowserGameInput({
   );
   const rayIntersection = useMemo(() => new Vector3(), []);
   const targetIntersections = useRef<Intersection[]>([]);
+  const projectedPoint = useRef<GroundPoint>({ x: 0, z: 0 });
+  const suppressContextMenuRef = useRef(false);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -46,11 +39,14 @@ export function BrowserGameInput({
       );
     };
 
-    const projectPointer = (): GroundPoint | null => {
+    const projectPointer = (output: GroundPoint): boolean => {
       raycaster.setFromCamera(input.pointerNdc, camera);
       input.raycastMetrics.ground += 1;
       const hit = raycaster.ray.intersectPlane(groundPlane, rayIntersection);
-      return hit ? { x: hit.x, z: hit.z } : null;
+      if (!hit) return false;
+      output.x = hit.x;
+      output.z = hit.z;
+      return true;
     };
 
     const isPointerOnTarget = (): boolean => {
@@ -75,11 +71,12 @@ export function BrowserGameInput({
       updatePointer(event);
 
       if (isPointerOnTarget()) {
-        event.preventDefault();
-        runtime.dispatch({
+        const consumed = router.dispatch({
           type: "activate-target",
           targetId: TEST_DUMMY.id,
         });
+        suppressContextMenuRef.current = event.button === 2 && consumed;
+        if (consumed) event.preventDefault();
         return;
       }
 
@@ -87,26 +84,29 @@ export function BrowserGameInput({
         return;
       }
 
-      event.preventDefault();
-      const point = projectPointer();
+      const point = projectedPoint.current;
 
-      if (!point) {
+      if (!projectPointer(point)) {
         return;
       }
 
+      const timestampMs = performance.now();
+      const consumed = router.dispatch({
+        type: "start-ground-move",
+        point,
+        timestampMs,
+      });
+      suppressContextMenuRef.current = consumed;
+      if (!consumed) return;
+
+      event.preventDefault();
       input.pointerId = event.pointerId;
       canvas.setPointerCapture(event.pointerId);
-      const timestampMs = performance.now();
       input.rightPressStartedAtMs = timestampMs;
       input.groundPoint.x = point.x;
       input.groundPoint.z = point.z;
       input.hasGroundHit = true;
       input.hasPendingFacingPoint = true;
-      runtime.dispatch({
-        type: "start-ground-move",
-        point,
-        timestampMs,
-      });
     };
 
     const handlePointerMove = (event: PointerEvent): void => {
@@ -121,19 +121,20 @@ export function BrowserGameInput({
       }
 
       updatePointer(event);
-      const finalPoint = projectPointer();
+      const finalPoint = projectedPoint.current;
 
-      if (finalPoint) {
+      if (projectPointer(finalPoint)) {
         input.groundPoint.x = finalPoint.x;
         input.groundPoint.z = finalPoint.z;
         input.hasGroundHit = true;
         input.hasPendingFacingPoint = true;
       }
 
-      runtime.dispatch({
+      const consumed = router.dispatch({
         type: "finish-ground-move",
         timestampMs: performance.now(),
       });
+      if (consumed) event.preventDefault();
 
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
@@ -144,7 +145,8 @@ export function BrowserGameInput({
     };
 
     const handleContextMenu = (event: MouseEvent): void => {
-      event.preventDefault();
+      if (suppressContextMenuRef.current) event.preventDefault();
+      suppressContextMenuRef.current = false;
     };
 
     const handleWheel = (event: WheelEvent): void => {
@@ -154,8 +156,10 @@ export function BrowserGameInput({
         return;
       }
 
-      event.preventDefault();
-      onCameraDistanceChange(direction * CAMERA_WHEEL_ZOOM_STEP_METERS);
+      if (router.dispatch({
+        type: "camera-zoom",
+        deltaMeters: direction * CAMERA_WHEEL_ZOOM_STEP_METERS,
+      })) event.preventDefault();
     };
 
     const cancelInput = (): void => {
@@ -172,14 +176,6 @@ export function BrowserGameInput({
       input.rightPressStartedAtMs = null;
       input.hasGroundHit = false;
       input.hasPendingFacingPoint = false;
-      runtime.dispatch({ type: "cancel-gameplay-input" });
-      runtime.resetFrameAccumulator();
-    };
-
-    const handleVisibilityChange = (): void => {
-      if (document.hidden) {
-        cancelInput();
-      }
     };
 
     canvas.addEventListener("pointerdown", handlePointerDown);
@@ -187,52 +183,32 @@ export function BrowserGameInput({
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     window.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("contextmenu", handleContextMenu);
-    window.addEventListener("blur", cancelInput);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const unsubscribeCancel = router.subscribe("global", (action) => {
+      if (action.type !== "cancel-gameplay") return false;
+      cancelInput();
+      return true;
+    });
 
     return () => {
+      cancelInput();
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("wheel", handleWheel);
       window.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("contextmenu", handleContextMenu);
-      window.removeEventListener("blur", cancelInput);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      unsubscribeCancel();
     };
   }, [
     camera,
     gl,
     groundPlane,
     input,
-    onCameraDistanceChange,
+    projectedPoint,
     rayIntersection,
     raycaster,
-    runtime,
+    router,
     targetObjectRef,
   ]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.repeat || isEditableEventTarget(event.target)) {
-        return;
-      }
-
-      if (event.code === SPEED_BOOST_KEYBINDING.code) {
-        runtime.dispatch({
-          type: "activate-ability",
-          abilityId: "speed-boost",
-        });
-        return;
-      }
-
-      if (event.code === PLAYER_AREA_KEYBINDING.code) {
-        runtime.dispatch({ type: "toggle-player-area" });
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [runtime]);
 
   useFrame(() => {
     input.hasGroundHit = input.hasPendingFacingPoint;
@@ -253,7 +229,7 @@ export function BrowserGameInput({
     input.hasGroundHit = true;
     input.groundPoint.x = hit.x;
     input.groundPoint.z = hit.z;
-    runtime.dispatch({
+    router.dispatch({
       type: "steer-ground-move",
       point: input.groundPoint,
     });

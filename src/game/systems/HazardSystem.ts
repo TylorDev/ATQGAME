@@ -20,12 +20,14 @@ export class HazardSystem implements GameSystem {
       context.deltaSeconds,
       isInside,
       definition.tickIntervalSeconds,
+      world.burningHazardSnapshot,
     );
     world.player.isBurning = hazard.isActive;
 
     for (let tick = 0; tick < hazard.damageTicks; tick += 1) {
       const result = world.player.vitality.applyDamage(
         definition.damagePerTick,
+        world.player.damageResult,
       );
       context.events.push({
         type: "vitality-change",

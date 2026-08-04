@@ -1,7 +1,5 @@
 import { PLAYER_BASE_SPEED_METERS_PER_SECOND } from "./constants";
 import { DEFAULT_PLAYER_COMBAT_SETTINGS } from "./combat";
-import { BURNING_EFFECT } from "./hazards";
-import { getEffectTimerProgress } from "./overheadStatus";
 import type {
   ActiveEffect,
   PlayerCombatSnapshot,
@@ -13,8 +11,8 @@ export const SPEED_BOOST_DURATION_MS = 5_000;
 export const SPEED_BOOST_COOLDOWN_MS = 15_000;
 
 export interface SpeedModifier {
-  id: string;
-  multiplier: number;
+  readonly id: string;
+  readonly multiplier: number;
 }
 
 export interface SpeedBoostSnapshot {
@@ -81,7 +79,9 @@ export class SpeedBoostController {
   };
 
   activate(timestampMs: number): boolean {
-    if (this.update(timestampMs).cooldownRemainingMs > 0) {
+    this.sync(timestampMs);
+
+    if (this.state.cooldownRemainingMs > 0) {
       return false;
     }
 
@@ -90,15 +90,30 @@ export class SpeedBoostController {
   }
 
   getSnapshot(timestampMs: number): SpeedBoostSnapshot {
-    return { ...this.update(timestampMs) };
+    return this.writeSnapshot(timestampMs);
   }
 
-  update(timestampMs: number): SpeedBoostSnapshot {
+  writeSnapshot(
+    timestampMs: number,
+    output: SpeedBoostSnapshot = {
+      isActive: false,
+      durationRemainingMs: 0,
+      cooldownRemainingMs: 0,
+    },
+  ): SpeedBoostSnapshot {
+    this.sync(timestampMs);
+    output.isActive = this.state.isActive;
+    output.durationRemainingMs = this.state.durationRemainingMs;
+    output.cooldownRemainingMs = this.state.cooldownRemainingMs;
+    return output;
+  }
+
+  private sync(timestampMs: number): void {
     if (this.activatedAtMs === null) {
       this.state.isActive = false;
       this.state.durationRemainingMs = 0;
       this.state.cooldownRemainingMs = 0;
-      return this.state;
+      return;
     }
 
     const elapsedMs = Math.max(0, timestampMs - this.activatedAtMs);
@@ -108,7 +123,6 @@ export class SpeedBoostController {
     this.state.isActive = durationRemainingMs > 0;
     this.state.durationRemainingMs = durationRemainingMs;
     this.state.cooldownRemainingMs = cooldownRemainingMs;
-    return this.state;
   }
 }
 
@@ -120,35 +134,4 @@ export function getCurrentPlayerSpeedMetersPerSecond(
     PLAYER_BASE_SPEED_METERS_PER_SECOND *
       (speedBoost.isActive ? SPEED_BOOST_MULTIPLIER : 1),
   );
-}
-
-export function writeActivePlayerEffects(
-  output: ActiveEffect[],
-  speedBoost: SpeedBoostSnapshot,
-  isBurning: boolean,
-): readonly ActiveEffect[] {
-  output.length = 0;
-
-  if (speedBoost.isActive) {
-    output.push({
-      ...SPEED_BOOST_EFFECT,
-      timerProgress: getEffectTimerProgress(
-        speedBoost.durationRemainingMs,
-        SPEED_BOOST_DURATION_MS,
-      ),
-    });
-  }
-
-  if (isBurning) {
-    output.push(BURNING_EFFECT);
-  }
-
-  return output;
-}
-
-export function getActivePlayerEffects(
-  speedBoost: SpeedBoostSnapshot,
-  isBurning: boolean,
-): readonly ActiveEffect[] {
-  return writeActivePlayerEffects([], speedBoost, isBurning);
 }

@@ -17,6 +17,7 @@ import {
   useGameLogSnapshot,
   useHasGameLogEntries,
 } from "@/contexts/GameLogContext";
+import { useGameUiSelector, useGameUiStore } from "@/contexts/GameUiContext";
 import {
   formatGameLogEntry,
   formatGameLogMessage,
@@ -38,9 +39,7 @@ import {
 import { parseGameConsoleCommand } from "@/game/consoleCommand";
 import { GAME_CONSOLE_KEYBINDING } from "@/game/keybindings";
 import {
-  loadConsoleWindowState,
   normalizeConsoleWindowState,
-  saveConsoleWindowState,
   type ConsoleResizeDirection,
   type ConsoleWindowState,
 } from "@/game/consoleWindow";
@@ -70,10 +69,6 @@ const browserFrameScheduler: ConsoleFrameScheduler = {
 
 function getViewport() {
   return { width: window.innerWidth, height: window.innerHeight };
-}
-
-function getInitialWindowState(): ConsoleWindowState {
-  return loadConsoleWindowState(window.localStorage, getViewport());
 }
 
 function stopActionPointerDown(event: ReactPointerEvent<HTMLButtonElement>): void {
@@ -219,15 +214,9 @@ const GameConsoleHeader = memo(function GameConsoleHeader({
   );
 });
 
-interface GameConsoleCommandLineProps {
-  fpsVisible: boolean;
-  onFpsVisibilityChange: (visible: boolean) => void;
-}
-
-const GameConsoleCommandLine = memo(function GameConsoleCommandLine({
-  fpsVisible,
-  onFpsVisibilityChange,
-}: GameConsoleCommandLineProps) {
+const GameConsoleCommandLine = memo(function GameConsoleCommandLine() {
+  const store = useGameUiStore();
+  const fpsVisible = useGameUiSelector((state) => state.preferences.fpsVisible);
   const [commandText, setCommandText] = useState("");
   const [feedback, setFeedback] = useState("Comando disponible: /fps");
   const [hasError, setHasError] = useState(false);
@@ -244,7 +233,7 @@ const GameConsoleCommandLine = memo(function GameConsoleCommandLine({
 
     if (command.type === "toggle-fps") {
       const nextVisible = !fpsVisible;
-      onFpsVisibilityChange(nextVisible);
+      store.setFpsVisible(nextVisible);
       setHasError(false);
       setFeedback(
         `Contador FPS ${nextVisible ? "activado" : "desactivado"}.`,
@@ -457,16 +446,12 @@ const GameConsoleFeed = memo(function GameConsoleFeed() {
 function GameConsoleWindow({
   state,
   windowRef,
-  fpsVisible,
-  onFpsVisibilityChange,
   onHide,
   onMoveStart,
   onResizeStart,
 }: {
   state: ConsoleWindowState;
   windowRef: RefObject<HTMLElement | null>;
-  fpsVisible: boolean;
-  onFpsVisibilityChange: (visible: boolean) => void;
   onHide: () => void;
   onMoveStart: (event: ReactPointerEvent<HTMLElement>) => void;
   onResizeStart: (
@@ -488,10 +473,7 @@ function GameConsoleWindow({
     >
       <GameConsoleHeader onHide={onHide} onMoveStart={onMoveStart} />
       <GameConsoleFeed />
-      <GameConsoleCommandLine
-        fpsVisible={fpsVisible}
-        onFpsVisibilityChange={onFpsVisibilityChange}
-      />
+      <GameConsoleCommandLine />
 
       {resizeDirections.map((direction) => (
         <div
@@ -505,26 +487,18 @@ function GameConsoleWindow({
   );
 }
 
-interface GameConsoleProps {
-  fpsVisible: boolean;
-  onFpsVisibilityChange: (visible: boolean) => void;
-}
-
-export function GameConsole({
-  fpsVisible,
-  onFpsVisibilityChange,
-}: GameConsoleProps) {
-  const [windowState, setWindowState] =
-    useState<ConsoleWindowState>(getInitialWindowState);
+export function GameConsole() {
+  const store = useGameUiStore();
+  const windowState = useGameUiSelector((state) => state.consoleWindow);
   const windowStateRef = useRef(windowState);
+  windowStateRef.current = windowState;
   const windowRef = useRef<HTMLElement>(null);
 
   const commitWindowState = useCallback((nextState: ConsoleWindowState): void => {
     windowStateRef.current = nextState;
     applyCommittedWindowState(windowRef.current, nextState);
-    setWindowState(nextState);
-    saveConsoleWindowState(window.localStorage, nextState, getViewport());
-  }, []);
+    store.setConsoleWindow(nextState);
+  }, [store]);
 
   const gestureController = useMemo(
     () =>
@@ -539,19 +513,14 @@ export function GameConsole({
   );
 
   useEffect(() => {
-    const toggleConsole = (): void => {
-      gestureController.finishActive();
-      const currentState = windowStateRef.current;
-      commitWindowState({ ...currentState, isOpen: !currentState.isOpen });
-    };
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== GAME_CONSOLE_KEYBINDING.code || event.repeat) {
-        return;
-      }
+    if (windowState.isOpen) return;
+    const finalState = gestureController.finishActive(false);
+    if (finalState) {
+      store.setConsoleWindow({ ...finalState, isOpen: false });
+    }
+  }, [gestureController, store, windowState.isOpen]);
 
-      event.preventDefault();
-      toggleConsole();
-    };
+  useEffect(() => {
     const handlePointerMove = (event: PointerEvent): void => {
       gestureController.update(
         event.pointerId,
@@ -571,7 +540,6 @@ export function GameConsole({
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", finishPointerInteraction);
     window.addEventListener("pointercancel", finishPointerInteraction);
@@ -580,7 +548,6 @@ export function GameConsole({
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", finishPointerInteraction);
       window.removeEventListener("pointercancel", finishPointerInteraction);
@@ -591,12 +558,12 @@ export function GameConsole({
 
       if (finalState) {
         windowStateRef.current = finalState;
-        saveConsoleWindowState(window.localStorage, finalState, getViewport());
+        store.setConsoleWindow(finalState);
       }
 
       gestureController.dispose();
     };
-  }, [commitWindowState, gestureController]);
+  }, [gestureController, store]);
 
   useEffect(() => {
     let pendingFrameId: number | null = null;
@@ -647,10 +614,10 @@ export function GameConsole({
       }
 
       if (pendingState) {
-        saveConsoleWindowState(window.localStorage, pendingState, getViewport());
+        store.setConsoleWindow(pendingState);
       }
     };
-  }, [commitWindowState, gestureController]);
+  }, [commitWindowState, gestureController, store]);
 
   const beginInteraction = useCallback(
     (
@@ -694,15 +661,13 @@ export function GameConsole({
 
   const hideConsole = useCallback((): void => {
     gestureController.finishActive();
-    commitWindowState({ ...windowStateRef.current, isOpen: false });
-  }, [commitWindowState, gestureController]);
+    store.closeConsole();
+  }, [gestureController, store]);
 
   return windowState.isOpen ? (
     <GameConsoleWindow
       state={windowState}
       windowRef={windowRef}
-      fpsVisible={fpsVisible}
-      onFpsVisibilityChange={onFpsVisibilityChange}
       onHide={hideConsole}
       onMoveStart={handleMoveStart}
       onResizeStart={handleResizeStart}

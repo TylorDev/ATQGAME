@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Checkbox from "@radix-ui/react-checkbox";
+import { useGameUiSelector, useGameUiStore } from "@/contexts/GameUiContext";
 import { GAME_KEYBINDINGS } from "@/game/keybindings";
 import type {
   GraphicsQualityPreset,
@@ -12,14 +13,6 @@ import {
 
 import styles from "./SettingsPanel.module.scss";
 
-interface SettingsPanelProps {
-  onClose: () => void;
-  onPlayerNameChange: (displayName: string) => void;
-  playerName: string;
-  graphicsQuality: GraphicsQualitySettings;
-  onGraphicsQualityChange: (settings: GraphicsQualitySettings) => void;
-}
-
 const GRAPHICS_QUALITY_OPTIONS: readonly {
   value: GraphicsQualityPreset;
   label: string;
@@ -29,13 +22,11 @@ const GRAPHICS_QUALITY_OPTIONS: readonly {
   { value: "high", label: "Alto" },
 ];
 
-export function SettingsPanel({
-  onClose,
-  onPlayerNameChange,
-  playerName,
-  graphicsQuality,
-  onGraphicsQualityChange,
-}: SettingsPanelProps) {
+export function SettingsPanel() {
+  const store = useGameUiStore();
+  const isOpen = useGameUiSelector((state) => state.visibility.settings);
+  const playerName = useGameUiSelector((state) => state.preferences.playerName);
+  const graphicsQuality = useGameUiSelector((state) => state.preferences.graphics);
   const [draftName, setDraftName] = useState(playerName);
 
   useEffect(() => {
@@ -47,9 +38,11 @@ export function SettingsPanel({
     setDraftName(normalizedName);
 
     if (normalizedName !== playerName) {
-      onPlayerNameChange(normalizedName);
+      store.setPlayerName(normalizedName);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className={styles.overlay}>
@@ -64,7 +57,7 @@ export function SettingsPanel({
             <p className={styles.eyebrow}>Configuración</p>
             <h2 id="settings-title">Ajustes del juego</h2>
           </div>
-          <button aria-label="Cerrar settings" className={styles.close} onClick={onClose} type="button">
+          <button aria-label="Cerrar settings" className={styles.close} onClick={store.closeSettings} type="button">
             ×
           </button>
         </header>
@@ -109,7 +102,7 @@ export function SettingsPanel({
             <select
               value={graphicsQuality.preset}
               onChange={(event) =>
-                onGraphicsQualityChange({
+                store.setGraphics({
                   ...graphicsQuality,
                   preset: event.target.value as GraphicsQualityPreset,
                 })
@@ -127,7 +120,7 @@ export function SettingsPanel({
               className={styles.checkbox}
               checked={graphicsQuality.adaptiveDpr}
               onCheckedChange={(checked) =>
-                onGraphicsQualityChange({
+                store.setGraphics({
                   ...graphicsQuality,
                   adaptiveDpr: checked === true,
                 })
